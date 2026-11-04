@@ -76,6 +76,7 @@ function render() {
   const keepScroll = messages && messages.scrollHeight - messages.scrollTop - messages.clientHeight > 100 ? messages.scrollTop : null;
   document.body.classList.toggle('is-presenting', state.presenting);
   document.body.classList.toggle('is-participant', state.role === 'participant');
+  document.body.classList.toggle('is-host', state.role === 'host');
   $('#app').innerHTML = state.role === 'host' ? hostView() : participantView();
   bindEvents();
   for (const canvas of document.querySelectorAll('.invite-qr')) QRCode.toCanvas(canvas, inviteUrl(), { width: state.stage.step === 'chat' ? 195 : 280, margin: 2, color: { dark: '#201B13', light: '#ffffff' } }).catch(() => {});

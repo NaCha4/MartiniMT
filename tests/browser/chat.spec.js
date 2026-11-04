@@ -48,11 +48,13 @@ test('host roster → slide QR → name pairing → chat → targeted instructio
     await host.screenshot({ path: '.cache/screenshots/host-admin.png', fullPage: true });
     await alice.screenshot({ path: '.cache/screenshots/participant.png', fullPage: true });
     expect(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await host.setViewportSize({ width: 390, height: 844 });
-    await expect(host.locator('img')).toHaveCount(0);
+    await host.setViewportSize({ width: 1366, height: 768 });
+    expect(await host.locator('.team-grid').evaluate(grid => getComputedStyle(grid).gridTemplateColumns.split(' ').length)).toBe(4);
     expect(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await host.screenshot({ path: '.cache/screenshots/admin-mobile.png', fullPage: true });
-    await host.setViewportSize({ width: 1440, height: 1000 });
+    await alice.setViewportSize({ width: 320, height: 740 });
+    expect(await alice.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await alice.screenshot({ path: '.cache/screenshots/participant-320.png', fullPage: true });
+    await alice.setViewportSize({ width: 390, height: 844 });
     await mobile.setOffline(true); await expect(alice.locator('.connection')).toContainText('연결 중', { timeout: 20000 });
     await alice.locator('#message-input').fill('작성 중에도 연결이 유지돼요'); await expect(alice.locator('#send-button')).toBeDisabled();
     await mobile.setOffline(false); await expect(alice.locator('.connection')).toContainText('실시간 연결됨', { timeout: 20000 });

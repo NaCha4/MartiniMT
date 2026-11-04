@@ -371,3 +371,27 @@ dialog textarea { resize: vertical; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* Host tools target a laptop; only the participant flow adapts to a phone. */
+.is-host { min-width: 1120px; }
+.is-host .team-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+.is-host .team-card { padding: 18px 16px 12px; }
+.is-host .intro { display: flex; align-items: center; }
+.is-host .intro-actions { padding-top: var(--space-6); }
+.is-host .how-it-works { grid-template-columns: repeat(3, 1fr); }
+.is-host .event-strip { flex-wrap: nowrap; }
+.is-host .event-strip > div:first-child { flex-basis: auto; }
+.is-host .event-stat { border-left: 1px solid var(--color-border); padding-left: var(--space-6); }
+.is-host .roster-row { gap: 7px; min-height: 61px; }
+.is-host .roster-row input { padding: 9px 8px; font-size: 15px; }
+.is-host .roster-row .row-action { padding: 4px; min-height: 0; font-size: 11px; }
+.is-participant { min-width: 0; }
+.is-participant .topbar, .participant-main { max-width: 480px; }
+.is-participant .topbar { height: 72px; }
+.mobile-join input, .mobile-join select, .mobile-join .button { min-height: 52px; font-size: 16px; }
+.participant-main { padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+.instruction-card .button { min-height: 50px; font-size: 16px; }
+.is-participant .channel-tabs button { min-height: 44px; padding: 9px 13px; }
+.mobile-chat textarea { min-height: 48px; font-size: 16px; }
+.mobile-chat form > button { width: 48px; height: 48px; }
+.mobile-chat form { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
