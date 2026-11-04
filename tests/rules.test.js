@@ -73,6 +73,20 @@ test('personal instructions and acknowledgements are restricted to their partici
   await assertFails(set(location(db('alice'), 'responses/A1'), { instructionId: 'wrong', acknowledgedAt: serverTimestamp() }));
   await assertSucceeds(set(location(db('alice'), 'responses/A1'), { instructionId: instruction.id, acknowledgedAt: serverTimestamp() }));
 });
+
+test('a touch round starts atomically and rejects forged time or an old round response', async () => {
+  await create(); await claim('alice', 'A1'); await claim('bob', 'A2');
+  const round = 't'.repeat(20);
+  await assertSucceeds(update(location(db('host')), {
+    stage: { step: 'join', updatedAt: serverTimestamp() },
+    'instructions/A1': { id: round, title: '터치하세요!', body: '선착순 터치', createdAt: serverTimestamp() },
+    'instructions/A2': { id: round, title: '터치하세요!', body: '선착순 터치', createdAt: serverTimestamp() },
+  }));
+  await assertFails(set(location(db('alice'), 'responses/A1'), { instructionId: 'old', acknowledgedAt: serverTimestamp() }));
+  await assertFails(set(location(db('alice'), 'responses/A1'), { instructionId: round, acknowledgedAt: 1 }));
+  await assertSucceeds(set(location(db('alice'), 'responses/A1'), { instructionId: round, acknowledgedAt: serverTimestamp() }));
+  await assertFails(set(location(db('bob'), 'responses/A1'), { instructionId: round, acknowledgedAt: serverTimestamp() }));
+});
 test('chat begins with the host, checks identity and team, and rejects edit, delete, and rapid send', async () => {
   await create(); await claim('alice', 'A1');
   await assertFails(send('alice', 'A1', roster.participants.A1).send());

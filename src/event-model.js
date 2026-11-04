@@ -1,10 +1,25 @@
 export const ROOT = 'mtChatV1/sessions';
 export const TEAM_IDS = ['A', 'B', 'C', 'D'];
 export const MAX_MESSAGE = 1000;
+export const TOUCH_TITLE = '터치하세요!';
+export const TOUCH_BODY = '선착순 터치';
 export const STAGES = [
-  { id: 'join', title: '참가자 입장', description: 'QR을 스캔한 뒤 등록된 이름을 입력하세요.' },
-  { id: 'chat', title: '실시간 채팅', description: '휴대폰에서 보낸 메시지가 표시됩니다.' },
+  { id: 'join', step: 'join', title: '참가자 입장', description: 'QR을 스캔한 뒤 등록된 이름을 입력하세요.' },
+  { id: 'touch', step: 'join', title: '가장 먼저 터치하세요!', description: '휴대폰 화면을 터치하세요.' },
 ];
+export function stageIndex(index, direction) { return Math.max(0, Math.min(STAGES.length - 1, index + direction)); }
+export function instructionIsCurrent(instruction, stage) { return stage.step === 'join' && Number(instruction?.createdAt) >= Number(stage.updatedAt); }
+export function touchRoundIsActive(instruction, stage) {
+  return instructionIsCurrent(instruction, stage) && instruction?.title === TOUCH_TITLE && instruction?.body === TOUCH_BODY;
+}
+export function firstTouch(responses, participants, roundId) {
+  if (!roundId) return null;
+  const entries = Object.entries(responses ?? {}).filter(([id, response]) => participants[id] && response.instructionId === roundId && Number.isFinite(response.acknowledgedAt));
+  entries.sort((a, b) => a[1].acknowledgedAt - b[1].acknowledgedAt);
+  if (!entries.length) return null;
+  const [id, response] = entries[0];
+  return { id, ...participants[id], receivedAt: response.acknowledgedAt };
+}
 export function normalizedName(name) { return String(name ?? '').normalize('NFKC').replace(/\s/gu, '').toLocaleLowerCase('ko-KR'); }
 export function nameKey(name) { return [...new TextEncoder().encode(normalizedName(name))].map(byte => byte.toString(16).padStart(2, '0')).join(''); }
 export function initials(name) { return Array.from(name ?? '?')[0]; }

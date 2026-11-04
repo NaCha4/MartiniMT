@@ -3,7 +3,7 @@ import { getAuth, setPersistence, browserLocalPersistence, signInAnonymously, co
 import { getDatabase, connectDatabaseEmulator, ref, get, set, update, push, onValue, onChildAdded, onChildChanged, onChildRemoved, query, orderByChild, limitToLast, onDisconnect, serverTimestamp } from 'firebase/database';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { firebaseConfig, appCheckSiteKey } from '../firebase-config.js';
-import { ROOT, nameKey } from './event-model.js';
+import { ROOT, nameKey, TOUCH_TITLE, TOUCH_BODY } from './event-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -49,6 +49,14 @@ export async function registerPresence(room, uid, participantId) {
 export async function sendInstruction(room, participantId, title, body) {
   const id = push(locationRef(room, 'instructions')).key;
   await set(locationRef(room, `instructions/${participantId}`), { id, title, body, createdAt: serverTimestamp() });
+}
+export function startTouchRound(room, participantIds) {
+  const id = push(locationRef(room, 'instructions')).key;
+  const changes = { stage: { step: 'join', updatedAt: serverTimestamp() } };
+  for (const participantId of participantIds) changes[`instructions/${participantId}`] = {
+    id, title: TOUCH_TITLE, body: TOUCH_BODY, createdAt: serverTimestamp(),
+  };
+  return { id, confirmed: update(locationRef(room), changes) };
 }
 export const acknowledge = (room, id, instructionId) => set(locationRef(room, `responses/${id}`), { instructionId, acknowledgedAt: serverTimestamp() });
 export function watchChat(room, channel, callbacks) {
