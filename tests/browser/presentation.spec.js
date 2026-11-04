@@ -75,6 +75,8 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await alice.locator('#tap-target').tap();
     await expect(host.locator('#winner-name')).toHaveText('김지민');
     await expect(bob.locator('#tap-target')).toHaveCount(0);
+    await expect(bob.getByRole('heading', { name: '끝났습니다' })).toBeVisible();
+    await expect(bob.getByText('선착순 입력이 마감되었습니다.')).toBeVisible();
     await host.screenshot({ path: '.cache/screenshots/presentation-winner.png', fullPage: true });
 
     await host.locator('.presentation-title').click({ button: 'right' });
@@ -104,6 +106,8 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await expect(host.locator('#winner-name')).toHaveText(/김지민|이서연/);
     await expect(alice.locator('#tap-target')).toHaveCount(0);
     await expect(bob.locator('#tap-target')).toHaveCount(0);
+    await expect(alice.getByRole('heading', { name: '끝났습니다' })).toBeVisible();
+    await expect(bob.getByRole('heading', { name: '끝났습니다' })).toBeVisible();
     await expect(alice.locator('[role="alert"]')).toHaveCount(0);
     await expect(bob.locator('[role="alert"]')).toHaveCount(0);
     await host.keyboard.press('Escape');

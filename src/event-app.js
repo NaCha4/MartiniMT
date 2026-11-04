@@ -82,7 +82,10 @@ function participantView() {
   const submitted = Boolean(state.instruction?.id) && (state.submittedRoundId === state.instruction.id || state.response?.instructionId === state.instruction.id);
   const showTarget = active && !submitted;
   const identity = `<span class="controller-identity">${escape(state.participant.teamName)} · ${escape(state.participant.name)}</span>`;
-  return `<main class="controller-main">${errorBanner()}${showTarget ? `<button id="tap-target" class="tap-target" ${state.tapping || !state.online ? 'disabled' : ''}>${identity}<strong>${state.tapping ? '전송 중…' : state.online ? '터치하세요!' : '재연결 중…'}</strong><span>화면 어디든 누르세요</span></button>` : `<section class="waiting-card">${identity}<h2>${state.tapping ? '전송 중…' : state.stage.step === 'closed' && submitted ? '입력 완료' : '대기 중'}</h2><p>${!state.online ? '연결을 복구하고 있습니다.' : state.stage.step === 'closed' ? '발표 화면에서 결과를 확인하세요.' : '진행자의 안내를 기다려 주세요.'}</p></section>`}</main>`;
+  const ended = state.stage.step === 'closed';
+  const statusTitle = ended ? '끝났습니다' : state.tapping ? '전송 중…' : active && submitted ? '입력 완료' : '대기 중';
+  const statusDescription = ended ? '선착순 입력이 마감되었습니다.' : !state.online ? '연결을 복구하고 있습니다.' : '진행자의 안내를 기다려 주세요.';
+  return `<main class="controller-main">${errorBanner()}${showTarget ? `<button id="tap-target" class="tap-target" ${state.tapping || !state.online ? 'disabled' : ''}>${identity}<strong>${state.tapping ? '전송 중…' : state.online ? '터치하세요!' : '재연결 중…'}</strong><span>화면 어디든 누르세요</span></button>` : `<section class="waiting-card">${identity}<h2>${statusTitle}</h2><p>${statusDescription}</p></section>`}</main>`;
 }
 
 function render() {
