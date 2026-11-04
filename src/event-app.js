@@ -1,5 +1,7 @@
+import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 import './event-style.css';
 import QRCode from 'qrcode';
+import { createElement, Martini, Presentation, Save, SlidersHorizontal, Link, ArrowLeft, ArrowRight, ArrowUp, Unplug, X, Sparkles, MessageCircle } from 'lucide';
 import * as api from './event-data.js';
 import { TEAM_IDS, STAGES, rosterFromInputs, onlineParticipants, friendlyError, messageText, initials } from './event-model.js';
 
@@ -7,6 +9,8 @@ const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const local = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Storage can be unavailable in private browsing. */ } } };
 const queryRoom = new URLSearchParams(location.search).get('room');
+const iconNodes = { Martini, Presentation, Save, SlidersHorizontal, Link, ArrowLeft, ArrowRight, ArrowUp, Unplug, X, Sparkles, MessageCircle };
+const icon = name => createElement(iconNodes[name], { width: 20, height: 20, 'stroke-width': 1.6, 'aria-hidden': 'true', focusable: 'false' }).outerHTML;
 const state = { role: queryRoom ? 'participant' : 'host', room: queryRoom, uid: null, online: false, error: '', ready: false, presenting: false, meta: null, stage: { step: 'setup' }, participants: {}, bindings: {}, presence: {}, instructions: {}, responses: {}, rows: Object.fromEntries(TEAM_IDS.map(team => [team, Array(6).fill('')])), teamNames: Object.fromEntries(TEAM_IDS.map(team => [team, `${team}조`])), title: 'Martini MT', dirty: false, participant: null, participantId: null, instruction: null, response: null, choices: null, name: '', draft: '', channel: 'all', messages: new Map(), pending: new Set(), sending: false, cooldown: false, busy: false, linking: false };
 let stops = [], participantStops = [], chatStop, presenceClose, presenceEpoch = 0, frame, composing = false;
 
@@ -15,19 +19,23 @@ function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = 
 function inviteUrl() { const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('room', state.room); return url.href; }
 function connectedIds() { return onlineParticipants(state.presence); }
 function connectionBadge() { return `<span class="connection ${state.online ? 'online' : ''}"><i></i>${api.emulator ? '로컬 테스트 · ' : ''}${state.online ? '실시간 연결됨' : '연결 중'}</span>`; }
-function logo() { return '<a class="brand" href="./"><span class="brand-symbol">M<span>↗</span></span><span>MARTINI<small>OUR MT, OUR MOMENT</small></span></a>'; }
+function logo() { return `<a class="brand" href="./" aria-label="Martini MT 홈"><span class="brand-symbol">${icon('Martini')}</span><span>MARTINI<small>OUR MT, OUR MOMENT</small></span></a>`; }
 function teamName(team) { return state.participants[`${team}1`]?.teamName ?? state.teamNames[team] ?? `${team}조`; }
 function count() { return Object.values(state.rows).flat().filter(name => name.trim()).length; }
 function topbar(extra = '') { return `<header class="topbar">${logo()}<div class="top-actions">${connectionBadge()}${extra}</div></header>`; }
-function errorBanner() { return state.error ? `<div class="error-banner" role="alert">${escape(state.error)}<button data-action="dismiss" aria-label="알림 닫기">×</button></div>` : ''; }
-function button(text, action, type = 'soft', disabled = false) { return `<button class="button ${type}" data-action="${action}" ${disabled ? 'disabled' : ''}>${text}</button>`; }
+function errorBanner() { return state.error ? `<div class="error-banner" role="alert">${escape(state.error)}<button data-action="dismiss" aria-label="알림 닫기">${icon('X')}</button></div>` : ''; }
+function button(text, action, type = 'soft', disabled = false) {
+  const label = text.replace(/<[^>]*>/g, '').trim();
+  const symbol = { save: 'Save', present: 'Presentation', manage: 'SlidersHorizontal', copy: 'Link', next: 'ArrowRight', previous: 'ArrowLeft' }[action];
+  return `<button class="button ${type}" aria-label="${escape(label)}" data-action="${action}" ${disabled ? 'disabled' : ''}><span>${escape(label.replace(/[↗←→]/g, '').trim())}</span>${symbol ? icon(symbol) : ''}</button>`;
+}
 
 function rosterCard(team) {
   const online = connectedIds();
   return `<section class="team-card team-${team}"><div class="team-heading"><span class="team-icon">${team}</span><input aria-label="${team}조 이름" id="team-${team}" data-team-name="${team}" maxlength="20" value="${escape(state.teamNames[team])}"/><span id="count-${team}" class="small-count">${state.rows[team].filter(name => name.trim()).length} / 6</span></div><div class="roster">${state.rows[team].map((name, index) => {
     const id = `${team}${index + 1}`, binding = state.bindings[id], instruction = state.instructions[id], response = state.responses[id];
     const acknowledged = instruction && response?.instructionId === instruction.id;
-    return `<div class="roster-row"><span class="row-number">${String(index + 1).padStart(2, '0')}</span><input id="name-${id}" data-person="${id}" aria-label="${team}조 ${index + 1}번 이름" maxlength="24" placeholder="참가자 실명" value="${escape(name)}"/><span class="person-state ${online.has(id) ? 'active' : ''}" title="${online.has(id) ? '현재 접속 중' : binding ? '기기 연결됨 · 오프라인' : '미접속'}"></span>${state.participants[id] ? `<button class="row-action" data-notice="${id}" title="개별 안내 보내기" aria-label="${escape(name)}에게 안내">${acknowledged ? '확인 ✓' : instruction ? '대기' : '안내'}</button>` : ''}${binding ? `<button class="unlink" data-release="${id}" aria-label="${escape(name)} 기기 연결 해제" title="기기 연결 해제">↗</button>` : ''}</div>`;
+    return `<div class="roster-row"><span class="row-number">${String(index + 1).padStart(2, '0')}</span><input id="name-${id}" data-person="${id}" aria-label="${team}조 ${index + 1}번 이름" maxlength="24" placeholder="참가자 실명" value="${escape(name)}"/><span class="person-state ${online.has(id) ? 'active' : ''}" title="${online.has(id) ? '현재 접속 중' : binding ? '기기 연결됨 · 오프라인' : '미접속'}"></span>${state.participants[id] ? `<button class="row-action" data-notice="${id}" title="개별 안내 보내기" aria-label="${escape(name)}에게 안내">${acknowledged ? '확인 ✓' : instruction ? '대기' : '안내'}</button>` : ''}${binding ? `<button class="unlink" data-release="${id}" aria-label="${escape(name)} 기기 연결 해제" title="기기 연결 해제">${icon('Unplug')}</button>` : ''}</div>`;
   }).join('')}</div></section>`;
 }
 
@@ -55,7 +63,7 @@ function chatList() {
 }
 
 function participantView() {
-  if (!state.participant) return `${topbar()}<main class="mobile-join"><div class="join-art">✳</div><span class="eyebrow">WELCOME TO OUR MOMENT</span><h1>반가워요<span>.</span></h1><p>${escape(state.meta?.title ?? 'Martini MT')}에 함께할<br/>본인의 실명을 입력해주세요.</p>${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" name="realName" placeholder="등록된 실명을 입력해주세요" maxlength="24" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">같은 이름이 있어요. 조를 선택해주세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${escape(person.teamName)} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결하는 중…' : '내 자리로 입장하기 ↗'}</button></form><div class="join-tip"><strong>내 이름이 없다면?</strong><span>진행자에게 명단 등록을 부탁해주세요.</span></div></main>`;
+  if (!state.participant) return `${topbar()}<main class="mobile-join"><div class="join-art">${icon('Martini')}</div><span class="eyebrow">WELCOME TO OUR MOMENT</span><h1>반가워요<span>.</span></h1><p>${escape(state.meta?.title ?? 'Martini MT')}에 함께할<br/>본인의 실명을 입력해주세요.</p>${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" name="realName" placeholder="등록된 실명을 입력해주세요" maxlength="24" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">같은 이름이 있어요. 조를 선택해주세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${escape(person.teamName)} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결하는 중…' : '내 자리로 입장하기 ↗'}</button></form><div class="join-tip"><strong>내 이름이 없다면?</strong><span>진행자에게 명단 등록을 부탁해주세요.</span></div></main>`;
   const instruction = state.instruction, acknowledged = instruction && state.response?.instructionId === instruction.id;
   const activeChat = state.stage.step === 'chat';
   return `<div class="mobile-app">${topbar()}<main class="participant-main"><div class="my-identity"><span class="avatar team-${state.participant.team}">${escape(initials(state.participant.name))}</span><div><span>${escape(state.participant.teamName)}</span><h1>${escape(state.participant.name)}<small>님</small></h1></div><span class="linked-badge">기기 연결 완료 ✓</span></div>${errorBanner()}${instruction ? `<section class="instruction-card"><span class="eyebrow">JUST FOR YOU</span><h2>${escape(instruction.title)}</h2><p>${escape(instruction.body)}</p><button id="acknowledge" class="button dark" ${acknowledged || !state.online ? 'disabled' : ''}>${acknowledged ? '확인했어요 ✓' : '확인했어요'}</button></section>` : ''}${activeChat ? `<section class="mobile-chat"><div class="chat-heading"><h2>우리의 대화</h2>${channelTabs()}</div>${chatList()}<form id="message-form"><textarea id="message-input" aria-label="메시지" rows="1" maxlength="1000" placeholder="반가운 인사를 나눠요">${escape(state.draft)}</textarea><button id="send-button" aria-label="메시지 보내기" ${state.sending || !state.online || state.cooldown || !state.draft.trim() ? 'disabled' : ''}>↑</button></form><div class="message-hint">${state.sending ? '서버에 전달하는 중이에요' : !state.online ? '다시 연결하고 있어요. 작성한 내용은 유지돼요.' : 'Enter로 전송 · Shift + Enter로 줄바꿈'}</div></section>` : `<section class="waiting-card"><div class="waiting-orbit"><span>✳</span></div><span class="eyebrow">YOU’RE ALL SET</span><h2>준비 완료!<br/>잠시만 기다려주세요.</h2><p>진행자가 시작하면<br/>이 화면이 자동으로 바뀌어요.</p></section>`}<p class="participant-footnote">이름과 조는 진행자가 등록한 정보와 연결돼요.</p></main></div>`;
@@ -70,7 +78,7 @@ function render() {
   document.body.classList.toggle('is-participant', state.role === 'participant');
   $('#app').innerHTML = state.role === 'host' ? hostView() : participantView();
   bindEvents();
-  for (const canvas of document.querySelectorAll('.invite-qr')) QRCode.toCanvas(canvas, inviteUrl(), { width: state.stage.step === 'chat' ? 195 : 280, margin: 2, color: { dark: '#203d2d', light: '#ffffff' } }).catch(() => {});
+  for (const canvas of document.querySelectorAll('.invite-qr')) QRCode.toCanvas(canvas, inviteUrl(), { width: state.stage.step === 'chat' ? 195 : 280, margin: 2, color: { dark: '#201B13', light: '#ffffff' } }).catch(() => {});
   const chat = $('#chat-messages');
   if (chat) chat.scrollTop = keepScroll ?? chat.scrollHeight;
   if (focusId) { const input = document.getElementById(focusId); if (input) { input.focus({ preventScroll: true }); if (selection && input.setSelectionRange && input.type !== 'number') input.setSelectionRange(...selection); } }

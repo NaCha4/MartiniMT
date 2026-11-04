@@ -9,6 +9,8 @@ test('host roster → slide QR → name pairing → chat → targeted instructio
   try {
     await host.goto('/');
     await expect(host.getByRole('button', { name: '명단 저장' })).toBeEnabled();
+    await expect(host.locator('img')).toHaveCount(0);
+    await host.evaluate(() => document.fonts.ready);
     await host.locator('#team-A').fill('민트팀'); await host.locator('#team-B').fill('라임팀');
     await host.locator('#name-A1').fill('김지민'); await host.locator('#name-A2').fill('이서연'); await host.locator('#name-B1').fill('김지민');
     await host.getByRole('button', { name: /발표 시작/ }).click();
@@ -45,6 +47,12 @@ test('host roster → slide QR → name pairing → chat → targeted instructio
     await expect(host.locator('[data-notice="A1"]')).toContainText('확인');
     await host.screenshot({ path: '.cache/screenshots/host-admin.png', fullPage: true });
     await alice.screenshot({ path: '.cache/screenshots/participant.png', fullPage: true });
+    expect(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await host.setViewportSize({ width: 390, height: 844 });
+    await expect(host.locator('img')).toHaveCount(0);
+    expect(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await host.screenshot({ path: '.cache/screenshots/admin-mobile.png', fullPage: true });
+    await host.setViewportSize({ width: 1440, height: 1000 });
     await mobile.setOffline(true); await expect(alice.locator('.connection')).toContainText('연결 중', { timeout: 20000 });
     await alice.locator('#message-input').fill('작성 중에도 연결이 유지돼요'); await expect(alice.locator('#send-button')).toBeDisabled();
     await mobile.setOffline(false); await expect(alice.locator('.connection')).toContainText('실시간 연결됨', { timeout: 20000 });
