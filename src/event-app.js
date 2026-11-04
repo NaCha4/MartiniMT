@@ -19,6 +19,7 @@ const state = {
   teamNames: Object.fromEntries(TEAM_IDS.map(team => [team, `${team}조`])), title: '마티니 MT',
   participantId: null, participant: null, instruction: null, response: null, choices: null, name: '',
   raceRoundId: null, winner: null, tapping: false, submittedRoundId: null,
+  screenStarting: false, fullscreenFallback: false,
 };
 let participantStops = [], presenceClose, presenceEpoch = 0, frame, composing = false;
 
@@ -30,6 +31,17 @@ function teamName(team) { return Object.values(state.participants).find(person =
 function inviteUrl() { const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('room', state.room); return url.href; }
 function isFullscreen() { return Boolean(document.fullscreenElement) || (innerWidth >= screen.width - 8 && innerHeight >= screen.height - 8); }
 function fullscreenControl() { return isFullscreen() ? '' : '<button class="button outline fullscreen-button" data-action="fullscreen" data-no-slide>전체화면</button>'; }
+function controllerFullscreen() { return Boolean(document.fullscreenElement) || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true; }
+function controllerCanFullscreen() { return Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen); }
+async function startController() {
+  if (state.screenStarting) return;
+  state.screenStarting = true;
+  try {
+    if (!controllerFullscreen() && controllerCanFullscreen()) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    if (screen.orientation?.lock) await screen.orientation.lock('landscape').catch(() => {});
+  } catch { state.fullscreenFallback = true; }
+  finally { state.screenStarting = false; schedule(); }
+}
 function connectionBadge() { return `<span class="connection ${state.online ? 'online' : ''}">${api.emulator ? '로컬 테스트 · ' : ''}${state.online ? '실시간 연결됨' : '연결 중'}</span>`; }
 function topbar() { return `<header class="topbar"><a class="brand" href="./">마티니 MT</a>${connectionBadge()}</header>`; }
 function button(text, action, type = 'soft', disabled = false) { return `<button class="button ${type}" data-action="${action}" ${disabled ? 'disabled' : ''}>${escape(text)}</button>`; }
@@ -62,11 +74,15 @@ function presentationView() {
 }
 
 function participantView() {
-  if (!state.participant) return `${topbar()}<main class="mobile-join"><h1>참가자 입장</h1><p>${escape(state.meta?.title ?? '마티니 MT')}<br/>등록된 이름을 입력하세요.</p>${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${escape(person.teamName)} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form><p class="join-tip">명단에 이름이 없으면 진행자에게 알려 주세요.</p></main>`;
+  const portrait = matchMedia('(orientation: portrait)').matches;
+  const needsFullscreen = !controllerFullscreen() && controllerCanFullscreen() && !state.fullscreenFallback;
+  if (portrait || needsFullscreen) return `<main class="controller-gate"><h1>${portrait ? '휴대폰을 가로로<br/>돌려주세요.' : '전체화면으로 시작하세요.'}</h1><p>${portrait ? '가로 화면으로 진행합니다.' : '화면을 터치하며 참여합니다.'}</p>${needsFullscreen ? `<button class="button dark" data-action="controller-start" ${state.screenStarting ? 'disabled' : ''}>${state.screenStarting ? '전환 중…' : '전체화면으로 시작'}</button>` : ''}</main>`;
+  if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>참가자 입장</h1><p>등록된 이름을 입력하세요.</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${escape(person.teamName)} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
   const active = touchRoundIsActive(state.instruction, state.stage);
   const submitted = Boolean(state.instruction?.id) && (state.submittedRoundId === state.instruction.id || state.response?.instructionId === state.instruction.id);
   const showTarget = active && !submitted;
-  return `<main class="participant-main touch-participant"><div class="my-identity"><div><span>${escape(state.participant.teamName)}</span><h1>${escape(state.participant.name)}<small>님</small></h1></div><span class="linked-badge">연결됨</span></div>${errorBanner()}${showTarget ? `<button id="tap-target" class="tap-target" ${state.tapping || !state.online ? 'disabled' : ''}><strong>${state.tapping ? '전송 중…' : state.online ? '터치하세요!' : '재연결 중…'}</strong><span>가장 먼저 터치하세요</span></button>` : `<section class="waiting-card"><h2>${state.tapping ? '전송 중…' : state.stage.step === 'closed' && submitted ? '입력 완료' : '대기 중'}</h2><p>${!state.online ? '연결을 복구하고 있습니다.' : state.stage.step === 'closed' ? '발표 화면에서 결과를 확인하세요.' : '진행자의 안내를 기다려 주세요.'}</p></section>`}</main>`;
+  const identity = `<span class="controller-identity">${escape(state.participant.teamName)} · ${escape(state.participant.name)}</span>`;
+  return `<main class="controller-main">${errorBanner()}${showTarget ? `<button id="tap-target" class="tap-target" ${state.tapping || !state.online ? 'disabled' : ''}>${identity}<strong>${state.tapping ? '전송 중…' : state.online ? '터치하세요!' : '재연결 중…'}</strong><span>화면 어디든 누르세요</span></button>` : `<section class="waiting-card">${identity}<h2>${state.tapping ? '전송 중…' : state.stage.step === 'closed' && submitted ? '입력 완료' : '대기 중'}</h2><p>${!state.online ? '연결을 복구하고 있습니다.' : state.stage.step === 'closed' ? '발표 화면에서 결과를 확인하세요.' : '진행자의 안내를 기다려 주세요.'}</p></section>`}</main>`;
 }
 
 function render() {
@@ -137,6 +153,7 @@ async function save() {
 async function action(name) {
   state.error = '';
   if (name === 'dismiss') { schedule(); return; }
+  if (name === 'controller-start') { await startController(); return; }
   if (name === 'fullscreen') {
     try { if (!document.documentElement.requestFullscreen) throw new Error(); await document.documentElement.requestFullscreen(); }
     catch { showError('전체화면으로 전환할 수 없습니다. 컴퓨터에서는 F11을 사용하세요.'); }
@@ -203,6 +220,7 @@ document.addEventListener('compositionstart', () => { composing = true; });
 document.addEventListener('compositionend', () => { composing = false; schedule(); });
 document.addEventListener('fullscreenchange', schedule);
 window.addEventListener('resize', schedule);
+screen.orientation?.addEventListener('change', schedule);
 const controlTarget = target => target instanceof Element && target.closest('button, a, input, textarea, select, dialog, [data-no-slide]');
 document.addEventListener('click', event => { if (state.presenting && event.button === 0 && !controlTarget(event.target) && !window.getSelection()?.toString()) void advance(1); });
 document.addEventListener('contextmenu', event => { if (state.presenting) { event.preventDefault(); if (!controlTarget(event.target)) void advance(-1); } });
