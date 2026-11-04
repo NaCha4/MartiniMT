@@ -10,6 +10,8 @@ test('host roster → slide QR → name pairing → chat → targeted instructio
     await host.goto('/');
     await expect(host.getByRole('button', { name: '명단 저장' })).toBeEnabled();
     await expect(host.locator('img')).toHaveCount(0);
+    await expect(host.locator('.team-icon, .brand-symbol, svg')).toHaveCount(0);
+    await expect(host.getByText(/HOST CONTROL|OUR MT|LET’S GET/)).toHaveCount(0);
     await host.evaluate(() => document.fonts.ready);
     await host.locator('#team-A').fill('민트팀'); await host.locator('#team-B').fill('라임팀');
     await host.locator('#name-A1').fill('김지민'); await host.locator('#name-A2').fill('이서연'); await host.locator('#name-B1').fill('김지민');
@@ -19,15 +21,15 @@ test('host roster → slide QR → name pairing → chat → targeted instructio
     await host.screenshot({ path: '.cache/screenshots/host-stage.png', fullPage: true });
     async function join(page, name, choice) {
       await page.goto(invite); await page.locator('#real-name').fill(name);
-      await expect(page.getByRole('button', { name: /내 자리로 입장/ })).toBeEnabled();
-      await page.getByRole('button', { name: /내 자리로 입장/ }).click();
-      if (choice) { await expect(page.locator('#person-choice')).toBeVisible(); await page.locator('#person-choice').selectOption(choice); await page.getByRole('button', { name: /내 자리로 입장/ }).click(); }
+      await expect(page.getByRole('button', { name: '입장', exact: true })).toBeEnabled();
+      await page.getByRole('button', { name: '입장', exact: true }).click();
+      if (choice) { await expect(page.locator('#person-choice')).toBeVisible(); await page.locator('#person-choice').selectOption(choice); await page.getByRole('button', { name: '입장', exact: true }).click(); }
     }
     await join(alice, '김지민', 'A1'); await expect(alice.getByText('기기 연결 완료')).toBeVisible();
     await join(bob, '이서연'); await expect(bob.getByText('기기 연결 완료')).toBeVisible();
     await expect(host.getByText('입장 완료', { exact: true })).toHaveCount(2);
     await join(other, '김지민', 'A1'); await expect(other.getByRole('alert')).toContainText('이미 연결');
-    await host.getByRole('button', { name: '채팅 시작 →' }).click();
+    await host.getByRole('button', { name: '채팅 시작' }).click();
     await expect(alice.locator('#message-input')).toBeVisible();
     async function send(page, text) { await page.locator('#message-input').fill(text); await expect(page.locator('#send-button')).toBeEnabled(); await page.locator('#send-button').click(); await expect(page.locator('#message-input')).toHaveValue(''); }
     await send(alice, '다 같이 연결됐어요! 반가워요 👋');
@@ -43,7 +45,7 @@ test('host roster → slide QR → name pairing → chat → targeted instructio
     await host.getByRole('button', { name: '휴대폰으로 보내기' }).click();
     await expect(alice.getByText('지민 님, 다음 차례예요!', { exact: true })).toBeVisible();
     await expect(bob.getByText('지민 님, 다음 차례예요!', { exact: true })).toHaveCount(0);
-    await alice.getByRole('button', { name: '확인했어요', exact: true }).click();
+    await alice.getByRole('button', { name: '확인', exact: true }).click();
     await expect(host.locator('[data-notice="A1"]')).toContainText('확인');
     await host.screenshot({ path: '.cache/screenshots/host-admin.png', fullPage: true });
     await alice.screenshot({ path: '.cache/screenshots/participant.png', fullPage: true });

@@ -2,8 +2,8 @@ export const ROOT = 'mtChatV1/sessions';
 export const TEAM_IDS = ['A', 'B', 'C', 'D'];
 export const MAX_MESSAGE = 1000;
 export const STAGES = [
-  { id: 'join', eyebrow: '01 · CHECK IN', title: '우리, 여기서 만나요.', description: 'QR 코드를 스캔하고, 본인의 이름으로 입장해주세요.' },
-  { id: 'chat', eyebrow: '02 · SAY HELLO', title: '오늘의 이야기를 시작해요.', description: '휴대폰에서 보낸 메시지가 이 화면에 함께 나타나요.' },
+  { id: 'join', title: '참가자 입장', description: 'QR을 스캔한 뒤 등록된 이름을 입력하세요.' },
+  { id: 'chat', title: '실시간 채팅', description: '휴대폰에서 보낸 메시지가 표시됩니다.' },
 ];
 export function normalizedName(name) { return String(name ?? '').normalize('NFKC').replace(/\s/gu, '').toLocaleLowerCase('ko-KR'); }
 export function nameKey(name) { return [...new TextEncoder().encode(normalizedName(name))].map(byte => byte.toString(16).padStart(2, '0')).join(''); }

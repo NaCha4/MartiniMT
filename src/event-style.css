@@ -50,17 +50,12 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
   justify-content: space-between;
   gap: var(--space-6);
 }
-.brand { display: flex; align-items: center; gap: 13px; text-decoration: none; font-size: 18px; font-weight: 750; letter-spacing: .14em; }
-.brand-symbol { display: grid; place-items: center; width: 40px; height: 44px; color: var(--color-accent); }
-.brand-symbol svg { width: 34px; height: 34px; stroke-width: 1.3; }
-.brand small { display: block; margin-top: 2px; font-size: 9px; letter-spacing: .18em; color: var(--color-text-secondary); font-weight: 450; }
+.brand { text-decoration: none; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
 .top-actions { display: flex; align-items: center; gap: var(--space-6); }
-.host-label { color: var(--color-text-secondary); font-size: var(--font-label); letter-spacing: .13em; }
 .connection { display: inline-flex; align-items: center; gap: 9px; border: 1px solid var(--color-border); border-radius: 5px; padding: 5px 11px; font-size: 12px; color: var(--color-text-secondary); white-space: nowrap; }
 .connection i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-muted); }
 .connection.online { background: var(--color-highlight); border-color: var(--color-highlight-border); color: var(--color-accent); }
 .connection.online i { background: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-wash); }
-.eyebrow { display: inline-block; color: var(--color-accent); font-size: var(--font-label); font-weight: 600; letter-spacing: var(--tracking-label); }
 
 /* Buttons and feedback */
 .button {
@@ -83,7 +78,7 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
 .button.white, .button.soft, .button.outline { background: transparent; color: var(--color-text); border-color: var(--color-highlight-border); }
 .button.white:hover:not(:disabled), .button.soft:hover:not(:disabled), .button.outline:hover:not(:disabled) { background: var(--color-surface-raised); border-color: var(--color-accent); color: var(--color-accent); }
 .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-top: var(--space-6); padding: 14px 18px; border: 1px solid var(--color-highlight-border); border-radius: var(--radius-panel); background: var(--color-highlight); color: var(--color-accent); font-size: 14px; }
-.error-banner button { display: grid; place-items: center; width: 32px; height: 32px; padding: 5px; border: 0; border-radius: 4px; background: transparent; color: inherit; }
+.error-banner button { flex-shrink: 0; min-width: 40px; min-height: 32px; padding: 5px; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 13px; }
 .error-banner button:hover { background: var(--color-accent-wash); }
 
 /* Host dashboard */
@@ -111,7 +106,6 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
 .team-heading input { width: 100%; padding: 4px 0; border-color: transparent; border-radius: 3px; background: transparent; font-size: 17px; font-weight: 600; }
 .team-heading input:hover { border-bottom-color: var(--color-highlight-border); }
 .team-heading input:focus { border-bottom-color: var(--color-accent); }
-.team-icon { display: grid; place-items: center; flex-shrink: 0; width: 29px; height: 29px; border: 1px solid var(--color-highlight-border); border-radius: 5px; background: var(--color-highlight); color: var(--color-accent); font-size: 13px; font-weight: 600; }
 .small-count { font-size: 11px; color: var(--color-text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .roster-row { display: flex; align-items: center; gap: 7px; min-height: 61px; }
 .row-number { flex-shrink: 0; color: var(--color-accent); opacity: .8; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -121,16 +115,8 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
 .person-state.active { background: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-wash); }
 .row-action { flex-shrink: 0; border: 1px solid var(--color-highlight-border); border-radius: 4px; padding: 4px; background: var(--color-highlight); color: var(--color-accent); font-size: 11px; white-space: nowrap; }
 .row-action:hover { background: var(--color-surface-raised); border-color: var(--color-accent); }
-.unlink { flex-shrink: 0; display: grid; place-items: center; border: 0; padding: 3px; background: transparent; color: var(--color-text-secondary); }
-.unlink svg { width: 16px; height: 16px; }
+.unlink { flex-shrink: 0; border: 0; padding: 4px; background: transparent; color: var(--color-text-secondary); font-size: 11px; white-space: nowrap; }
 .unlink:hover { color: var(--color-accent); }
-.how-it-works { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-8); margin-top: var(--space-8); padding: 26px 0; border-top: 1px solid var(--color-border); }
-.how-it-works > div { display: grid; grid-template-columns: 28px 1fr; gap: 5px 12px; align-items: center; }
-.how-it-works b { grid-row: span 2; color: var(--color-accent); font-size: 13px; font-weight: 500; }
-.how-it-works strong { font-size: 14px; font-weight: 550; }
-.how-it-works span { color: var(--color-text-secondary); font-size: 12px; }
-.footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 21px 0 8px; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); font-size: 11px; }
-.footer > span:first-child { color: var(--color-accent); font-size: 10px; letter-spacing: .13em; }
 
 /* Presentation mode keeps the same roster / QR / chat arrangement. */
 .presentation { display: flex; flex-direction: column; height: 100dvh; min-height: 660px; background: var(--color-background); }
@@ -143,7 +129,6 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
 .arrival-board { min-width: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--color-highlight-border) transparent; }
 .arrival-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 20px; font-size: 15px; color: var(--color-text-secondary); }
 .arrival-heading strong { margin-right: 3px; color: var(--color-accent); font-size: 32px; font-weight: 550; font-variant-numeric: tabular-nums; }
-.arrival-note { font-size: 12px; }
 .arrival-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .stage-team { padding: 17px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-panel); min-width: 0; }
 .stage-team-name { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 16px; }
@@ -178,7 +163,6 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
 .channel-tabs button.selected { border-color: var(--color-highlight-border); background: var(--color-highlight); color: var(--color-accent); }
 .chat-messages { flex: 1; min-height: 140px; padding: 24px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--color-highlight-border) transparent; overscroll-behavior: contain; }
 .message { display: flex; gap: 12px; margin-bottom: 24px; }
-.avatar { display: grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; border: 1px solid var(--color-highlight-border); border-radius: 6px; background: var(--color-highlight); color: var(--color-accent); font-size: 15px; font-weight: 550; }
 .message > div { max-width: 85%; min-width: 0; }
 .message-meta { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .message-meta strong { font-weight: 550; }
@@ -195,13 +179,8 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
 /* Participant pages */
 .is-participant .topbar { max-width: 580px; margin-inline: auto; padding-inline: 24px; height: 76px; }
 .is-participant .brand { font-size: 15px; gap: 8px; }
-.is-participant .brand-symbol { width: 30px; }
-.is-participant .brand-symbol svg { width: 27px; height: 27px; }
-.is-participant .brand small { font-size: 7px; }
 .is-participant .connection { font-size: 10px; padding: 5px 8px; }
 .mobile-join { max-width: 440px; margin: 20px auto; padding: 32px 28px 40px; }
-.join-art { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 30px; border: 1px solid var(--color-highlight-border); border-radius: var(--radius-panel); background: var(--color-highlight); color: var(--color-accent); }
-.join-art svg { width: 34px; height: 34px; stroke-width: 1.4; }
 .mobile-join h1 { margin: 12px 0 18px; font-size: 42px; font-weight: 650; }
 .mobile-join h1 > span { color: var(--color-accent); }
 .mobile-join > p { margin-bottom: 30px; color: var(--color-text-secondary); font-size: var(--font-body); }
@@ -214,17 +193,13 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
 .join-tip span { font-size: 13px; color: var(--color-text-secondary); }
 .participant-main { display: flex; flex-direction: column; max-width: 580px; min-height: calc(100dvh - 76px); margin-inline: auto; padding: 26px 24px 18px; }
 .my-identity { display: flex; align-items: center; gap: 13px; margin-bottom: 26px; }
-.my-identity > .avatar { width: 46px; height: 46px; font-size: 18px; }
 .my-identity > div > span { color: var(--color-accent); font-size: 12px; }
 .my-identity h1 { margin: 2px 0 0; font-size: 24px; }
 .my-identity h1 small { color: var(--color-text-secondary); font-size: 14px; font-weight: 400; margin-left: 4px; }
 .linked-badge { margin-left: auto; padding: 5px 8px; border: 1px solid var(--color-highlight-border); border-radius: 5px; background: var(--color-highlight); color: var(--color-accent); font-size: 10px; white-space: nowrap; }
 .waiting-card { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; min-height: 380px; padding: 40px 22px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-panel); text-align: center; }
-.waiting-orbit { display: grid; place-items: center; width: 125px; height: 125px; border: 1px dashed var(--color-highlight-border); border-radius: 50%; margin-bottom: 26px; }
-.waiting-orbit span { color: var(--color-accent); font-size: 68px; opacity: .8; }
 .waiting-card h2 { font-size: 29px; margin: 16px 0; line-height: 1.55; }
 .waiting-card p { color: var(--color-text-secondary); font-size: 16px; }
-.participant-footnote { color: var(--color-text-muted); font-size: 12px; text-align: center; margin: 20px 0 0; }
 .instruction-card { padding: 24px; border: 1px solid var(--color-highlight-border); border-radius: var(--radius-panel); background: var(--color-highlight); margin-bottom: 24px; }
 .instruction-card h2 { margin: 13px 0; font-size: 24px; }
 .instruction-card p { color: var(--color-text-secondary); font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -237,7 +212,6 @@ h1, h2, h3 { font-weight: 650; letter-spacing: var(--tracking-heading); line-hei
 .mobile-chat .own .message-meta { justify-content: flex-end; }
 .mobile-chat .own p { background: var(--color-highlight); border-color: var(--color-highlight-border); border-radius: 8px 0 8px 8px; }
 .mobile-chat .own time { display: block; text-align: right; }
-.mobile-chat .avatar { width: 30px; height: 30px; font-size: 12px; }
 .mobile-chat form { display: flex; align-items: flex-end; gap: 8px; padding: 12px; border-top: 1px solid var(--color-border); }
 .mobile-chat textarea { flex: 1; min-height: 46px; max-height: 130px; padding: 10px 12px; resize: none; font-size: 16px; line-height: 1.6; }
 .mobile-chat form > button { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 46px; border: 1px solid var(--color-accent); border-radius: var(--radius-button); background: var(--color-accent); color: var(--color-accent-text); font-size: 24px; }
@@ -275,7 +249,6 @@ dialog textarea { resize: vertical; }
   .intro-actions { padding-top: 30px; }
   .presentation-body { grid-template-columns: 1fr 250px; gap: 20px; }
   .arrival-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .arrival-note { display: none; }
   .presentation-title h1 { font-size: 34px; }
   .qr-card { padding: 18px; }
   .presentation .message p { font-size: 20px; }
@@ -284,11 +257,7 @@ dialog textarea { resize: vertical; }
 @media (max-width: 760px) {
   .topbar { gap: 12px; }
   .top-actions { gap: 10px; }
-  .host-label { display: none; }
   .brand { font-size: 16px; gap: 8px; }
-  .brand-symbol { width: 30px; }
-  .brand-symbol svg { width: 29px; height: 29px; }
-  .brand small { font-size: 7px; letter-spacing: .12em; }
   .connection { font-size: 10px; padding: 5px 8px; }
   .intro { display: block; }
   .intro h1 { margin-top: 12px; }
@@ -300,11 +269,6 @@ dialog textarea { resize: vertical; }
   .section-title { align-items: flex-start; gap: 15px; }
   .section-title h2 { font-size: 21px; }
   .section-title > span { font-size: 12px; text-align: right; }
-  .how-it-works { grid-template-columns: 1fr; gap: 20px; }
-  .how-it-works strong { font-size: 15px; }
-  .how-it-works span { font-size: 13px; }
-  .footer { align-items: flex-start; font-size: 10px; }
-  .footer > span:last-child { text-align: right; max-width: 55%; }
   .is-participant .topbar { height: 72px; padding-inline: 18px; }
   .participant-main { padding: 24px 18px 18px; min-height: calc(100dvh - 72px); }
   .my-identity { gap: 10px; }
@@ -326,7 +290,7 @@ dialog textarea { resize: vertical; }
   .presentation-title p { font-size: 15px; }
   .presentation-body { grid-template-columns: 1fr; }
   .qr-card { grid-row: 1; display: grid; grid-template-columns: 1fr 145px; gap: 8px 20px; max-height: none; padding: 20px; }
-  .qr-card > .eyebrow, .qr-card h2, .qr-card p { grid-column: 1; }
+  .qr-card h2, .qr-card p { grid-column: 1; }
   .qr-card h2 { font-size: 25px; margin: 3px 0; }
   .qr-card .qr-paper { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
   .qr-card p { margin: 0; font-size: 13px; }
@@ -348,7 +312,6 @@ dialog textarea { resize: vertical; }
   .team-grid { grid-template-columns: 1fr; gap: 18px; }
   .team-card { padding: 20px; }
   .team-heading input { font-size: 18px; }
-  .team-icon { width: 32px; height: 32px; font-size: 14px; }
   .small-count { font-size: 12px; }
   .roster-row { gap: 10px; min-height: 64px; }
   .roster-row input { padding: 11px 12px; }
@@ -359,11 +322,8 @@ dialog textarea { resize: vertical; }
   .intro-actions .button { flex: 1; }
   .event-strip label { font-size: 12px; }
   .event-stat strong { font-size: 28px; }
-  .eyebrow { font-size: 11px; }
-  .is-participant .brand small { font-size: 6px; }
   .is-participant .connection { font-size: 9px; }
   .is-participant .brand { font-size: 14px; }
-  .participant-footnote { font-size: 11px; }
   dialog { padding: 25px; }
 }
 
@@ -377,8 +337,7 @@ dialog textarea { resize: vertical; }
 .is-host .team-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
 .is-host .team-card { padding: 18px 16px 12px; }
 .is-host .intro { display: flex; align-items: center; }
-.is-host .intro-actions { padding-top: var(--space-6); }
-.is-host .how-it-works { grid-template-columns: repeat(3, 1fr); }
+.is-host .intro-actions { padding-top: 0; }
 .is-host .event-strip { flex-wrap: nowrap; }
 .is-host .event-strip > div:first-child { flex-basis: auto; }
 .is-host .event-stat { border-left: 1px solid var(--color-border); padding-left: var(--space-6); }
@@ -393,5 +352,5 @@ dialog textarea { resize: vertical; }
 .instruction-card .button { min-height: 50px; font-size: 16px; }
 .is-participant .channel-tabs button { min-height: 44px; padding: 9px 13px; }
 .mobile-chat textarea { min-height: 48px; font-size: 16px; }
-.mobile-chat form > button { width: 48px; height: 48px; }
+.mobile-chat form > button { width: 52px; height: 48px; font-size: 14px; font-weight: 550; }
 .mobile-chat form { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
