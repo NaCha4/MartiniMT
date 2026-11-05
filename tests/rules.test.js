@@ -7,6 +7,7 @@ import { rosterFromInputs, nameKey, TEAM_IDS } from '../src/event-model.js';
 import { WHISKY_OPTIONS, SOJU_OPTIONS, MILITARY_OPTIONS } from '../src/taste-model.js';
 import { STAGES } from '../src/event-model.js';
 import { emptyOxQuestions } from '../src/ox-model.js';
+import { LIAR_PROMPTS } from '../src/liar-prompts.js';
 
 if (process.env.FIREBASE_DATABASE_EMULATOR_HOST !== '127.0.0.1:9000') throw new Error('Only local emulator tests are permitted.');
 const room = 's'.repeat(20), path = `mtChatV1/sessions/${room}`;
@@ -25,6 +26,67 @@ const messages = (database, channel = 'all', limit = 100) => query(location(data
 before(async () => { env = await initializeTestEnvironment({ projectId: 'demo-martini-mt', database: { host: '127.0.0.1', port: 9000, rules: await readFile('database.rules.json', 'utf8') } }); });
 after(async () => env?.cleanup());
 beforeEach(async () => env.clearDatabase());
+
+const liarRoster = rosterFromInputs(Object.fromEntries(TEAM_IDS.map(team => [team, Array.from({ length: 3 }, (_, index) => `${team}선수${index + 1}`)])));
+const liarRoundId = 'l'.repeat(20);
+async function createLiarGame() {
+  await create(liarRoster);
+  for (const id of ['A1', 'A2', 'A3', 'B1', 'B2', 'C1', 'D1']) await claim(id, id);
+  await set(location(db('host'), 'liarGame'), { control: { roundId: liarRoundId, questionIndex: 0, phase: 'selecting', updatedAt: serverTimestamp() }, prompts: LIAR_PROMPTS, roster: liarRoster.participants, rounds: { 0: { roundId: liarRoundId, topic: '술' } } });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'liar-select-1'), updatedAt: serverTimestamp() });
+}
+function liarEntry(id, roundId = liarRoundId) {
+  return { participantId: id, ...liarRoster.participants[id], roundId, selectedAt: serverTimestamp() };
+}
+const enterLiar = (id, index = 0, roundId = liarRoundId) => set(location(db(id), `liarGame/rounds/${index}/contestants/${id[0]}`), liarEntry(id, roundId));
+
+test('liar entry selects one per team atomically and excludes past entrants', async () => {
+  await createLiarGame();
+  const entries = await Promise.allSettled([enterLiar('A1'), enterLiar('A2')]);
+  assert.equal(entries.filter(result => result.status === 'fulfilled').length, 1);
+  const winner = (await get(location(db('host'), 'liarGame/rounds/0/contestants/A'))).val().participantId;
+  await assertFails(remove(location(db(winner), 'liarGame/rounds/0/contestants/A')));
+  await assertFails(set(location(db('B1'), 'liarGame/rounds/0/contestants/C'), liarEntry('C1')));
+  const next = 'n'.repeat(20);
+  await update(location(db('host'), 'liarGame'), { 'control/roundId': next, 'control/questionIndex': 1, 'control/updatedAt': serverTimestamp(), 'rounds/1': { roundId: next, topic: '디저트' } });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'liar-select-2'), updatedAt: serverTimestamp() });
+  await assertFails(enterLiar(winner, 1, next));
+  await assertFails(enterLiar('A3', 1, liarRoundId));
+  await assertSucceeds(enterLiar('A3', 1, next));
+});
+
+test('liar words stay personal and contestants cannot join the audience vote', async () => {
+  await createLiarGame();
+  await assertSucceeds(get(location(db('A1'), 'liarGame/roster/A1')));
+  await assertFails(get(location(db('A1'), 'liarGame/roster/B1')));
+  for (const id of ['A1', 'B1', 'C1', 'D1']) await enterLiar(id);
+  await update(location(db('host'), 'liarGame'), {
+    'control/phase': 'describing', 'control/updatedAt': serverTimestamp(), 'rounds/0/secret': { liarId: 'A1' },
+    'rounds/0/cards/A1': { word: '', deliveredAt: serverTimestamp() },
+    'rounds/0/cards/B1': { word: '막걸리', deliveredAt: serverTimestamp() },
+  });
+  assert.equal((await assertSucceeds(get(location(db('A1'), 'liarGame/rounds/0/cards/A1')))).val().word, '');
+  assert.equal((await assertSucceeds(get(location(db('B1'), 'liarGame/rounds/0/cards/B1')))).val().word, '막걸리');
+  for (const path of ['liarGame', 'liarGame/prompts', 'liarGame/rounds/0/secret', 'liarGame/rounds/0/cards/B1']) await assertFails(get(location(db('A1'), path)));
+  await assertFails(get(location(db('A2'), 'liarGame/rounds/0/cards/B1')));
+  await assertSucceeds(get(location(db('A2'), 'liarGame/rounds/0/contestants')));
+  const vote = (id, participantId = 'A1', roundId = liarRoundId) => set(location(db(id), `liarGame/rounds/0/votes/${id}`), { participantId, roundId, submittedAt: serverTimestamp() });
+  await assertFails(vote('A2'));
+  await update(location(db('host'), 'liarGame/control'), { phase: 'voting', updatedAt: serverTimestamp() });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'liar-play-1'), updatedAt: serverTimestamp() });
+  await assertFails(vote('A1'));
+  await assertFails(vote('A2', 'A3'));
+  await assertFails(vote('A2', 'A1', 'old'.padEnd(20, '_')));
+  await assertSucceeds(vote('A2'));
+  await assertFails(vote('A2', 'B1'));
+  await assertFails(get(location(db('B2'), 'liarGame/rounds/0/votes/A2')));
+  await update(location(db('host'), 'liarGame/control'), { phase: 'finished', updatedAt: serverTimestamp() });
+  await assertFails(vote('B2'));
+  const oldGame = (await get(location(db('host'), 'liarGame'))).val();
+  await update(location(db('host')), { presentation: { active: true, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() }, liarGame: null });
+  await assertFails(set(location(db('host'), 'liarGame'), oldGame));
+  await assertFails(enterLiar('A3'));
+});
 
 async function createOxGame() {
   await create(); await claim('alice', 'A1'); await claim('bob', 'A2');

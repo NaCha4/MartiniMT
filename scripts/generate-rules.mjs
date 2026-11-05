@@ -176,6 +176,62 @@ const zoomGameRules = {
   },
   '$other': denyExtra,
 };
+const liar = `${s}.child('liarGame')`;
+const liarRound = `${liar}.child('rounds').child($round)`;
+const liarContestants = `${liarRound}.child('contestants')`;
+const liarScreen = view => STAGES.map((stage, index) => stage.game === 'liar' && stage.view === view
+  ? `($round === '${stage.questionIndex}' && ${s}.child('presentation/slideIndex').val() === ${index})` : null).filter(Boolean).join(' || ');
+const liarIsContestant = id => ['A', 'B', 'C', 'D'].map(team => `${liarContestants}.child('${team}/participantId').val() === ${id}`).join(' || ');
+const liarNotUsed = Array.from({ length: 3 }, (_, index) => `${liar}.child('rounds/${index}/contestants').child($team).child('participantId').val() !== ${pid}`).join(' && ');
+const liarGameRules = {
+  '.read': controller, '.write': controller,
+  '.validate': `newData.hasChildren(['control','prompts','roster','rounds']) && newData.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+  control: {
+    '.read': gameReader, '.validate': "newData.hasChildren(['roundId','questionIndex','phase','updatedAt'])",
+    roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' },
+    questionIndex: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() < 3 && newData.val() % 1 === 0' },
+    phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'describing' || newData.val() === 'voting' || newData.val() === 'finished'" },
+    updatedAt: storedTimestamp, '$other': denyExtra,
+  },
+  prompts: {
+    '.validate': "newData.hasChildren(['0','1','2'])",
+    '$round': { '.validate': "$round.matches(/^[0-2]$/) && newData.hasChildren(['topic','word'])", topic: text(40), word: text(100), '$other': denyExtra },
+  },
+  roster: { '$participant': { ...tasteGameRules('liarGame', 0).roster.$participant, '.read': self } },
+  rounds: {
+    '$round': {
+      '.validate': "$round.matches(/^[0-2]$/) && newData.hasChildren(['roundId','topic'])",
+      roundId: text(20), topic: { '.read': gameReader, ...text(40) },
+      contestants: {
+        '.read': gameReader,
+        '$team': {
+          '.write': `(${member}) && ${liar}.child('roster').child(${pid}).child('team').val() === $team && ${s}.child('presentation/active').val() === true && (${liarScreen('select')}) && ${liar}.child('control/phase').val() === 'selecting' && ${liar}.child('control/questionIndex').val() + '' === $round && newData.child('participantId').val() === ${pid} && newData.child('roundId').val() === ${liar}.child('control/roundId').val() && (${liarNotUsed}) && !data.exists() && newData.exists()`,
+          '.validate': `($team === 'A' || $team === 'B' || $team === 'C' || $team === 'D') && newData.hasChildren(['participantId','name','team','teamName','roundId','selectedAt']) && newData.child('roundId').val() === newData.parent().parent().child('roundId').val() && newData.child('team').val() === $team && newData.child('name').val() === ${liar}.child('roster').child(newData.child('participantId').val()).child('name').val() && newData.child('team').val() === ${liar}.child('roster').child(newData.child('participantId').val()).child('team').val() && newData.child('teamName').val() === ${liar}.child('roster').child(newData.child('participantId').val()).child('teamName').val()`,
+          participantId: text(2), name: text(24), team, teamName: text(20), roundId: text(20), selectedAt: storedTimestamp, '$other': denyExtra,
+        },
+      },
+      secret: { '.validate': "newData.hasChild('liarId')", liarId: text(2), '$other': denyExtra },
+      cards: { '$participant': { '.read': self, '.validate': "newData.hasChildren(['word','deliveredAt'])", word: { '.validate': 'newData.isString() && newData.val().length <= 100' }, deliveredAt: storedTimestamp, '$other': denyExtra } },
+      votes: {
+        '$participant': {
+          '.read': self,
+          '.write': `${self} && ${s}.child('presentation/active').val() === true && (${liarScreen('play')}) && ${liar}.child('control/phase').val() === 'voting' && ${liar}.child('control/questionIndex').val() + '' === $round && !(${liarIsContestant(pid)}) && newData.child('roundId').val() === ${liar}.child('control/roundId').val() && !data.exists() && newData.exists()`,
+          '.validate': `newData.hasChildren(['participantId','roundId','submittedAt']) && (${liarIsContestant("newData.child('participantId').val()")}) && newData.child('roundId').val() === newData.parent().parent().child('roundId').val()`,
+          participantId: text(2), roundId: text(20), submittedAt: storedTimestamp, '$other': denyExtra,
+        },
+      },
+      result: {
+        '.read': gameReader, '.validate': "newData.hasChildren(['liarId','caught','counts','points','revealedAt'])",
+        liarId: text(2), caught: { '.validate': 'newData.isBoolean()' },
+        counts: { '$participant': { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 24 && newData.val() % 1 === 0' } },
+        topIds: { '$participant': { '.validate': 'newData.val() === true' } },
+        points: scoreMap, revealedAt: storedTimestamp, '$other': denyExtra,
+      },
+      '$other': denyExtra,
+    },
+  },
+  '$other': denyExtra,
+};
 const session = {
   '.read': owner,
   '.write': "auth != null && !data.exists() && newData.child('meta/ownerUid').val() === auth.uid && $session.matches(/^[A-Za-z0-9_-]{20}$/)",
@@ -292,6 +348,7 @@ const session = {
   tasteGame: tasteGameRules('tasteGame', 3),
   sojuGame: tasteGameRules('sojuGame', 6),
   militaryGame: tasteGameRules('militaryGame', 9),
+  liarGame: liarGameRules,
   oxQuestions: { '.read': controller, '.write': controller, ...oxQuestions },
   oxGame: oxGameRules,
   zoomQuestions: { '.read': controller, '.write': controller, ...zoomQuestions },

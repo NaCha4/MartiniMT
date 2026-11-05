@@ -3,10 +3,11 @@ import { getAuth, setPersistence, browserLocalPersistence, signInAnonymously, co
 import { getDatabase, connectDatabaseEmulator, ref, get, set, update, push, onValue, onChildAdded, onChildChanged, onChildRemoved, query, orderByChild, limitToLast, onDisconnect, serverTimestamp, runTransaction } from 'firebase/database';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { firebaseConfig, appCheckSiteKey } from '../firebase-config.js';
-import { ROOT, nameKey, TOUCH_TITLE, TOUCH_BODY } from './event-model.js';
+import { ROOT, TEAM_IDS, nameKey, TOUCH_TITLE, TOUCH_BODY } from './event-model.js';
 import { TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward } from './taste-model.js';
 import { OX_QUESTION_COUNT, oxQuestionsReady, oxSurvivors, oxPoints } from './ox-model.js';
 import { ZOOM_QUESTION_COUNT, ZOOM_LEVELS, zoomQuestionsReady, zoomPoints, judgeZoomRequest, finishZoomFeedback } from './zoom-model.js';
+import { liarRosterReady, liarOutcome } from './liar-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -72,6 +73,7 @@ export function resetPresentation(room) {
     operatorError: null,
     oxGame: null,
     zoomGame: null,
+    liarGame: null,
   };
   for (const { path } of Object.values(TASTE_ROUNDS)) changes[path] = null;
   return update(locationRef(room), changes);
@@ -316,6 +318,73 @@ export async function awardZoomPoints(room) {
   const result = await transactLoaded(locationRef(room, 'teamScores'), current => {
     if (current?.awards?.[game.control.roundId]) return;
     return { ...scoreAward(current, game.control.roundId, zoomPoints(game), serverTimestamp()), resetAt: game.control.resetAt ?? null };
+  });
+  return result.snapshot.val();
+}
+
+export async function prepareLiarRound(room, roster, questionIndex, resetAt = null) {
+  const { LIAR_PROMPTS } = await import('./liar-prompts.js');
+  const roundId = push(locationRef(room, 'liarGame')).key;
+  const result = await transactLoaded(locationRef(room, 'liarGame'), current => {
+    if (current && (current.control.resetAt ?? null) !== resetAt) return;
+    if (current && questionIndex <= current.control.questionIndex) return;
+    if (!current && (questionIndex !== 0 || !liarRosterReady(roster))) throw { userMessage: '라이어게임에는 각 조 3명 이상이 필요합니다.' };
+    if (current && (questionIndex !== current.control.questionIndex + 1 || !current.rounds?.[questionIndex - 1]?.result)) throw { userMessage: '이전 라운드의 투표를 먼저 완료해주세요.' };
+    if (!LIAR_PROMPTS[questionIndex]) throw { userMessage: '라이어게임은 세 라운드입니다.' };
+    return {
+      ...current, roster: current?.roster ?? roster, prompts: current?.prompts ?? LIAR_PROMPTS,
+      control: { roundId, questionIndex, phase: 'selecting', resetAt, updatedAt: serverTimestamp() },
+      rounds: { ...current?.rounds, [questionIndex]: { roundId, topic: LIAR_PROMPTS[questionIndex].topic } },
+    };
+  });
+  const game = result.snapshot.val();
+  if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };
+  return game;
+}
+
+export async function claimLiarEntry(room, participantId, questionIndex, roundId) {
+  const person = await read(room, `liarGame/roster/${participantId}`);
+  if (!person) throw { userMessage: '게임 시작 시 등록된 참가자만 출전할 수 있습니다.' };
+  const location = locationRef(room, `liarGame/rounds/${questionIndex}/contestants/${person.team}`);
+  const result = await transactLoaded(location, current => current ? undefined : { participantId, ...person, roundId, selectedAt: serverTimestamp() });
+  if (!result.committed) throw { userMessage: '우리 조의 출전자가 이미 정해졌습니다.' };
+}
+
+export async function changeLiarPhase(room, questionIndex, roundId, action) {
+  const expected = { 'liar-deal': 'selecting', 'liar-vote': 'describing', 'liar-finish': 'voting' }[action];
+  const random = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+  const result = await transactLoaded(locationRef(room, 'liarGame'), current => {
+    if (current?.control?.roundId !== roundId || current.control.questionIndex !== questionIndex || current.control.phase !== expected) return;
+    const round = current.rounds[questionIndex];
+    const contestants = TEAM_IDS.map(team => round.contestants?.[team]);
+    if (contestants.some(person => !person)) throw { userMessage: '네 조의 출전자를 먼저 확정해주세요.' };
+    let updated = { ...round }, phase;
+    if (action === 'liar-deal') {
+      const liarId = contestants[Math.floor(random * contestants.length)].participantId;
+      const word = current.prompts[questionIndex].word;
+      updated = { ...round, secret: { liarId }, cards: Object.fromEntries(contestants.map(person => [person.participantId, { word: person.participantId === liarId ? '' : word, deliveredAt: serverTimestamp() }])) };
+      phase = 'describing';
+    } else if (action === 'liar-vote') phase = 'voting';
+    else {
+      if (!Object.keys(round.votes ?? {}).length) throw { userMessage: '한 명 이상 투표한 뒤 종료해주세요.' };
+      updated.result = { ...liarOutcome(round, round.secret.liarId), revealedAt: serverTimestamp() };
+      phase = 'finished';
+    }
+    return { ...current, control: { ...current.control, phase, updatedAt: serverTimestamp() }, rounds: { ...current.rounds, [questionIndex]: updated } };
+  });
+  if (!result.committed) throw { userMessage: '라이어게임 진행 단계가 변경되었습니다.' };
+  return result.snapshot.val();
+}
+
+export const submitLiarVote = (room, voterId, questionIndex, participantId, roundId) => set(locationRef(room, `liarGame/rounds/${questionIndex}/votes/${voterId}`), { participantId, roundId, submittedAt: serverTimestamp() });
+
+export async function awardLiarPoints(room, questionIndex) {
+  const game = await read(room, 'liarGame');
+  const round = game?.rounds?.[questionIndex];
+  if (!round?.result) throw { userMessage: '라이어 투표를 먼저 종료해주세요.' };
+  const result = await transactLoaded(locationRef(room, 'teamScores'), current => {
+    if (current?.awards?.[round.roundId]) return;
+    return { ...scoreAward(current, round.roundId, round.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
   });
   return result.snapshot.val();
 }

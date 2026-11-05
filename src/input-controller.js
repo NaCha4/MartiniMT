@@ -15,7 +15,9 @@ export function createInputController({ document, window, getContext, submitVote
     }
     if (!control.isConnected || control.disabled || voteKey !== getContext().voteKey) return;
     if (pending && (pending.moved || pending.voteKey !== voteKey)) return;
-    if (control.dataset.zoomRequest !== undefined) submitVote('zoom', null);
+    if (control.dataset.liarAction !== undefined) submitVote('liar-action', control.dataset.liarAction);
+    else if (control.dataset.zoomRequest !== undefined) submitVote('zoom', null);
+    else if (control.dataset.liarVote !== undefined) submitVote('liar', control.dataset.liarVote);
     else if (control.dataset.oxVote !== undefined) submitVote('ox', control.dataset.oxVote);
     else submitVote('taste', control.dataset.vote);
   }
@@ -38,7 +40,7 @@ export function createInputController({ document, window, getContext, submitVote
       suppressClickUntil = now() + 400;
       return;
     }
-    const voteControl = event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request]') ?? null;
+    const voteControl = event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request], button[data-liar-vote], button[data-liar-action]') ?? null;
     if (context.participant && !voteControl) return;
     if (voteControl && (voteControl.disabled || event.button !== 0)) return;
     suppressedVoteControl = null;
@@ -75,7 +77,7 @@ export function createInputController({ document, window, getContext, submitVote
   window.addEventListener('blur', cancel);
   document.addEventListener('click', event => {
     if (getContext().interactive && event.detail > 0 && now() < suppressClickUntil) {
-      if (event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request]') === suppressedVoteControl) suppressedVoteControl = null;
+      if (event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request], button[data-liar-vote], button[data-liar-action]') === suppressedVoteControl) suppressedVoteControl = null;
       event.preventDefault();
       event.stopImmediatePropagation();
     }

@@ -41,6 +41,7 @@ test('uploaded photos and selected zoom framing survive save and match the prese
   await expect(page.locator('.presentation')).toBeVisible();
   await page.evaluate(async () => {
     const api = await import('/src/event-data.js');
+    await api.connect();
     const { STAGES } = await import('/src/event-model.js');
     const room = localStorage.getItem('martini.host-room');
     const [questions, roster, presentation] = await Promise.all([api.read(room, 'zoomQuestions'), api.read(room, 'participants'), api.read(room, 'presentation')]);

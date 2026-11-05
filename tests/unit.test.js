@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import './liar.test.js';
 import './vote-input.test.js';
 import './subscription-group.test.js';
 import './app-lifecycle.test.js';
@@ -119,7 +120,7 @@ test('a race accepts only the current round and chooses the earliest server time
   assert.equal(touchRoundIsActive(instruction, { step: 'join', updatedAt: 101 }), false);
   assert.equal(touchRoundIsActive(instruction, { step: 'closed', updatedAt: 100 }), false);
   assert.equal(stageIndex(0, -1), 0);
-  const last = STAGES.findIndex(stage => stage.id === 'zoom-score');
+  const last = STAGES.findIndex(stage => stage.id === 'liar-score-3');
   assert.equal(stageIndex(last, 1), last);
 });
 

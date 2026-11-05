@@ -712,6 +712,37 @@ dialog textarea { resize: vertical; }
 @keyframes rank-move { from { top: calc(var(--from-rank) * 25%); } to { top: calc(var(--to-rank) * 25%); } }
 .taste-mobile { display: flex; flex-direction: column; justify-content: center; gap: 3vh; padding: max(58px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 24px max(24px, env(safe-area-inset-left)); text-align: center; }
 .taste-mobile h1 { margin: 0; font-size: clamp(22px, 4vw, 48px); }
+.liar-intro { display: flex; flex-direction: column; justify-content: center; }
+.liar-intro h1 { margin: 0 0 5vh; font-size: clamp(64px, 8vw, 145px); letter-spacing: -.06em; }
+.liar-rules { border-left: 3px solid var(--color-accent); padding-left: 3vw; font-size: clamp(20px, 2vw, 36px); line-height: 1.65; }
+.liar-rules p { margin: 1vh 0; }
+.liar-rules b { color: var(--color-accent); }
+.liar-screen { display: flex; flex-direction: column; gap: 4vh; }
+.liar-heading { display: flex; justify-content: space-between; color: var(--color-text-secondary); letter-spacing: .15em; font-size: clamp(16px, 1.5vw, 26px); }
+.liar-screen h1 { margin: 2vh 0; text-align: center; font-size: clamp(48px, 6vw, 110px); line-height: 1.15; }
+.liar-contestants { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2vw; flex: 1; min-height: 0; }
+.liar-contestant { display: flex; flex-direction: column; justify-content: center; gap: 3vh; padding: 2vw; border: 1px solid var(--signal-color); background: color-mix(in srgb, var(--signal-color) 8%, #171719); }
+.liar-contestant > span { color: var(--signal-color); font-size: clamp(24px, 2.6vw, 46px); }
+.liar-contestant strong { font-size: clamp(24px, 3vw, 54px); line-height: 1.2; overflow-wrap: anywhere; }
+.liar-contestant[data-team="A"], .liar-vote-options [data-team="A"] { --signal-color: #49e1ff; }
+.liar-contestant[data-team="B"], .liar-vote-options [data-team="B"] { --signal-color: #ff71c8; }
+.liar-contestant[data-team="C"], .liar-vote-options [data-team="C"] { --signal-color: #b5f571; }
+.liar-contestant[data-team="D"], .liar-vote-options [data-team="D"] { --signal-color: #a897ff; }
+.liar-status { margin: 0; text-align: center; color: var(--color-text-secondary); font-size: clamp(18px, 1.7vw, 30px); }
+.liar-enter { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px; border: 1px solid var(--color-accent); border-radius: 0; background: var(--color-highlight); color: var(--color-accent); }
+.liar-enter strong { font-size: clamp(40px, 7vw, 90px); }
+.liar-enter span { font-size: 20px; }
+.liar-confirm { width: min(800px, 95%); align-self: center; }
+.liar-confirm > div { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 32px; }
+.liar-confirm .button { min-height: 100px; border-radius: 0; font-size: 36px; }
+.liar-mobile .liar-word h1 { margin-top: 24px; font-size: clamp(40px, 6vw, 90px); }
+.liar-mobile .liar-vote-options button { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px; border-radius: 0; border-color: var(--signal-color); color: var(--signal-color); background: color-mix(in srgb, var(--signal-color) 8%, #171719); }
+.liar-vote-options small { font-size: 22px; }
+.liar-vote-options strong { font-size: clamp(24px, 4vw, 58px); }
+.liar-result { margin-bottom: 3vh; text-align: center; }
+.liar-result > span { color: var(--color-accent); font-size: 16px; letter-spacing: .15em; }
+.liar-result h1 { margin: 1vh 0; font-size: clamp(28px, 3vw, 52px); }
+.liar-result p { margin: 0; color: var(--color-text-secondary); font-size: clamp(20px, 2vw, 36px); }
 .ox-editor { margin-top: 24px; padding: 24px; border: 1px solid var(--color-highlight-border); background: var(--color-panel); }
 .ox-editor h2 { margin: 0 0 12px; }
 .ox-editor > p, .ox-editor > span { color: var(--color-text-secondary); font-size: 14px; line-height: 1.6; }
