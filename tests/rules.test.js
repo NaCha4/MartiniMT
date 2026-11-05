@@ -5,6 +5,8 @@ import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebas
 import { ref, set, update, push, get, remove, query, orderByChild, limitToLast, onChildAdded, serverTimestamp } from 'firebase/database';
 import { rosterFromInputs, nameKey, TEAM_IDS } from '../src/event-model.js';
 import { WHISKY_OPTIONS, SOJU_OPTIONS, MILITARY_OPTIONS } from '../src/taste-model.js';
+import { STAGES } from '../src/event-model.js';
+import { emptyOxQuestions } from '../src/ox-model.js';
 
 if (process.env.FIREBASE_DATABASE_EMULATOR_HOST !== '127.0.0.1:9000') throw new Error('Only local emulator tests are permitted.');
 const room = 's'.repeat(20), path = `mtChatV1/sessions/${room}`;
@@ -23,6 +25,59 @@ const messages = (database, channel = 'all', limit = 100) => query(location(data
 before(async () => { env = await initializeTestEnvironment({ projectId: 'demo-martini-mt', database: { host: '127.0.0.1', port: 9000, rules: await readFile('database.rules.json', 'utf8') } }); });
 after(async () => env?.cleanup());
 beforeEach(async () => env.clearDatabase());
+
+async function createOxGame() {
+  await create(); await claim('alice', 'A1'); await claim('bob', 'A2');
+  const questions = Object.fromEntries(Object.keys(emptyOxQuestions()).map(index => [index, { text: `테스트 문제 ${index}`, answer: 'O' }]));
+  await set(location(db('host'), 'oxQuestions'), questions);
+  await set(location(db('host'), 'oxGame'), {
+    control: { roundId: 'o'.repeat(20), questionIndex: 0, phase: 'open', updatedAt: serverTimestamp() },
+    questions, roster: roster.participants,
+    rounds: { 0: { prompt: questions[0].text, eligible: { A1: true, A2: true } } },
+  });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'ox-question-1'), updatedAt: serverTimestamp() });
+}
+const oxVote = (uid, id, index = 0, answer = 'O', roundId = 'o'.repeat(20)) => set(location(db(uid), `oxGame/rounds/${index}/votes/${id}`), { answer, roundId, submittedAt: serverTimestamp() });
+
+test('OX questions and other ballots stay private while each eligible member answers once', async () => {
+  await createOxGame(); await configureManager(); await claimManager('manager');
+  await assertSucceeds(get(location(db('manager'), 'oxQuestions')));
+  await assertSucceeds(get(location(db('alice'), 'oxGame/rounds/0/prompt')));
+  await assertSucceeds(get(location(db('alice'), 'oxGame/rounds/0/eligible/A1')));
+  await assertFails(get(location(db('alice'), 'oxQuestions')));
+  await assertFails(get(location(db('alice'), 'oxGame/questions/0/answer')));
+  await assertFails(get(location(db('alice'), 'oxGame')));
+  await assertFails(get(location(db('alice'), 'oxGame/rounds/0/votes/A2')));
+  await assertFails(get(location(db('visitor'), 'oxGame/control')));
+  await assertFails(oxVote('alice', 'A2'));
+  await assertFails(oxVote('alice', 'A1', 0, 'invalid'));
+  await assertFails(oxVote('alice', 'A1', 0, 'O', 'stale'.padEnd(20, '_')));
+  await assertSucceeds(oxVote('alice', 'A1'));
+  await assertFails(oxVote('alice', 'A1', 0, 'X'));
+  await assertFails(remove(location(db('alice'), 'oxGame/rounds/0/votes/A1')));
+  await assertFails(update(location(db('alice'), 'oxGame/control'), { phase: 'revealed' }));
+  await assertFails(set(location(db('alice'), 'oxGame/rounds/0/eligible/A2'), true));
+  await update(location(db('manager'), 'oxGame/control'), { phase: 'closed', updatedAt: serverTimestamp() });
+  await assertFails(oxVote('bob', 'A2'));
+});
+
+test('OX rejects eliminated members, wrong screens, future questions and pre-reset requests', async () => {
+  await createOxGame();
+  await set(location(db('host'), 'oxGame/rounds/0/result'), { answer: 'O', survivors: { A1: true }, revealedAt: serverTimestamp() });
+  await assertSucceeds(get(location(db('alice'), 'oxGame/rounds/0/result')));
+  await set(location(db('host'), 'oxGame/rounds/1'), { prompt: '다음 테스트', eligible: { A1: true } });
+  await update(location(db('host'), 'oxGame/control'), { questionIndex: 1, updatedAt: serverTimestamp() });
+  await assertFails(oxVote('alice', 'A1', 1));
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'ox-question-2'), updatedAt: serverTimestamp() });
+  await assertFails(oxVote('bob', 'A2', 1));
+  await assertFails(oxVote('alice', 'A1', 2));
+  await assertSucceeds(oxVote('alice', 'A1', 1));
+  const oldGame = (await get(location(db('host'), 'oxGame'))).val();
+  await assertSucceeds(update(location(db('host')), { presentation: { active: true, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() }, oxGame: null }));
+  await assertFails(set(location(db('host'), 'oxGame'), oldGame));
+  await assertFails(oxVote('bob', 'A2'));
+  assert.equal((await get(location(db('host'), 'oxQuestions/0/answer'))).val(), 'O');
+});
 
 test('only the event owner can manage roster, stage and instructions', async () => {
   await create();
@@ -336,7 +391,7 @@ test('soju ballots are independent and only accepted on the soju voting screen',
   assert.equal((await get(location(db('alice'), 'tasteGame/preferenceVotes/A1'))).val().optionId, 'peat');
   await assertSucceeds(set(location(db('host'), 'presentation'), { active: true, slideIndex: 8, updatedAt: serverTimestamp() }));
   await assertFails(sojuVote('bob', 'A2', 'jinro'));
-  await assertFails(set(location(db('host'), 'presentation'), { active: true, slideIndex: 12, updatedAt: serverTimestamp() }));
+  await assertFails(set(location(db('host'), 'presentation'), { active: true, slideIndex: 24, updatedAt: serverTimestamp() }));
 });
 
 test('military voting stays private and only accepts each vote on the military screen', async () => {
@@ -367,5 +422,5 @@ test('military voting stays private and only accepts each vote on the military s
   await update(location(db('host'), 'militaryGame/control'), { phase: 'prediction-closed', updatedAt: serverTimestamp() });
   await assertFails(vote('bob', 'A2', 'marines', 'prediction'));
   await assertSucceeds(set(location(db('host'), 'presentation'), { active: true, slideIndex: 11, updatedAt: serverTimestamp() }));
-  await assertFails(set(location(db('host'), 'presentation'), { active: true, slideIndex: 12, updatedAt: serverTimestamp() }));
+  await assertFails(set(location(db('host'), 'presentation'), { active: true, slideIndex: 24, updatedAt: serverTimestamp() }));
 });

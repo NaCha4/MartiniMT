@@ -230,7 +230,7 @@ test('whisky, soju and military votes, reveals and cumulative scores survive rev
     await expect(host.locator('[data-score-team="A"]')).toHaveText('40');
     await expect(host.locator('[data-score-team="B"]')).toHaveText('10');
     await expect(host.locator('[data-score-team="C"]')).toHaveText('20');
-    await expect(remote.getByRole('button', { name: '다음 화면' })).toBeDisabled();
+    await expect(remote.getByRole('button', { name: '다음 화면' })).toBeEnabled();
     for (const screen of ['12', '11']) {
       await remote.getByRole('button', { name: '이전 화면' }).click();
       await expect(host.locator('.presentation-screen-code')).toHaveText(screen);

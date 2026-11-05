@@ -5,6 +5,7 @@ import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { firebaseConfig, appCheckSiteKey } from '../firebase-config.js';
 import { ROOT, nameKey, TOUCH_TITLE, TOUCH_BODY } from './event-model.js';
 import { TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward } from './taste-model.js';
+import { OX_QUESTION_COUNT, oxQuestionsReady, oxSurvivors, oxPoints } from './ox-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -68,6 +69,7 @@ export function resetPresentation(room) {
     responses: null,
     teamScores: null,
     operatorError: null,
+    oxGame: null,
   };
   for (const { path } of Object.values(TASTE_ROUNDS)) changes[path] = null;
   return update(locationRef(room), changes);
@@ -139,6 +141,68 @@ export async function awardTastePoints(room, gameKey = 'whisky') {
   const result = await runTransaction(locationRef(room, 'teamScores'), current => {
     if (current?.awards?.[game.control.roundId]) return;
     return { ...scoreAward(current, game.control.roundId, game.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
+  }, { applyLocally: false });
+  return result.snapshot.val();
+}
+
+export const saveOxQuestions = (room, questions) => set(locationRef(room, 'oxQuestions'), questions);
+
+export async function prepareOxQuestion(room, roster, questionIndex, resetAt = null) {
+  const questions = await read(room, 'oxQuestions');
+  const roundId = push(locationRef(room, 'oxGame')).key;
+  await get(locationRef(room, 'oxGame'));
+  const result = await runTransaction(locationRef(room, 'oxGame'), current => {
+    if (!current) {
+      if (questionIndex !== 0 || !oxQuestionsReady(questions)) throw { userMessage: 'OX 문제 5개와 정답을 먼저 등록해주세요.' };
+      return {
+        control: { roundId, questionIndex: 0, phase: 'ready', resetAt, updatedAt: serverTimestamp() },
+        questions, roster,
+        rounds: { 0: { prompt: questions[0].text, eligible: Object.fromEntries(Object.keys(roster).map(id => [id, true])) } },
+      };
+    }
+    if ((current.control.resetAt ?? null) !== resetAt) return;
+    if (questionIndex <= current.control.questionIndex) return;
+    const previous = current.rounds?.[questionIndex - 1];
+    if (questionIndex !== current.control.questionIndex + 1 || !previous?.result) throw { userMessage: '이전 문제의 정답을 먼저 공개해주세요.' };
+    return {
+      ...current,
+      control: { ...current.control, questionIndex, phase: 'ready', updatedAt: serverTimestamp() },
+      rounds: { ...current.rounds, [questionIndex]: { prompt: current.questions[questionIndex].text, eligible: previous.result.survivors ?? {} } },
+    };
+  }, { applyLocally: false });
+  const game = result.snapshot.val();
+  if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };
+  return game;
+}
+
+export async function changeOxPhase(room, questionIndex, action, roundId) {
+  const phases = { 'ox-start': ['ready', 'open'], 'ox-close': ['open', 'closed'], 'ox-reveal': ['closed', 'revealed'] };
+  const [expected, phase] = phases[action];
+  await get(locationRef(room, 'oxGame'));
+  const result = await runTransaction(locationRef(room, 'oxGame'), current => {
+    if (!current || current.control.roundId !== roundId || current.control.questionIndex !== questionIndex || current.control.phase !== expected) return;
+    const updated = { ...current, control: { ...current.control, phase, updatedAt: serverTimestamp() } };
+    if (action === 'ox-reveal') {
+      const answer = current.questions[questionIndex].answer;
+      const round = current.rounds[questionIndex];
+      updated.rounds = { ...current.rounds, [questionIndex]: { ...round, result: { answer, survivors: oxSurvivors(round, answer), revealedAt: serverTimestamp() } } };
+    }
+    return updated;
+  }, { applyLocally: false });
+  if (!result.committed) throw { userMessage: 'OX 진행 단계가 변경되었습니다. 현재 화면을 확인해주세요.' };
+  return result.snapshot.val();
+}
+
+export const submitOxVote = (room, participantId, questionIndex, answer, roundId) => set(locationRef(room, `oxGame/rounds/${questionIndex}/votes/${participantId}`), { answer, roundId, submittedAt: serverTimestamp() });
+
+export async function awardOxPoints(room) {
+  const game = await read(room, 'oxGame');
+  if (game?.control?.questionIndex !== OX_QUESTION_COUNT - 1 || game.control.phase !== 'revealed'
+    || !Array.from({ length: OX_QUESTION_COUNT }, (_, index) => game.rounds?.[index]?.result).every(Boolean)) throw { userMessage: '다섯 문제의 정답을 모두 공개해주세요.' };
+  await get(locationRef(room, 'teamScores'));
+  const result = await runTransaction(locationRef(room, 'teamScores'), current => {
+    if (current?.awards?.[game.control.roundId]) return;
+    return { ...scoreAward(current, game.control.roundId, oxPoints(game), serverTimestamp()), resetAt: game.control.resetAt ?? null };
   }, { applyLocally: false });
   return result.snapshot.val();
 }

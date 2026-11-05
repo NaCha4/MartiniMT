@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import * as api from './event-data.js';
 import { TEAM_IDS, TEAM_NAMES, STAGES, stageIndex, touchRoundIsActive, touchRoundResult, firstTouch, rosterFromInputs, rowsFromParticipants, readRosterDraft, onlineParticipants, participantUrl, friendlyError } from './event-model.js';
 import { TASTE_ROUNDS, REVEAL_INTERVAL, rankedTeams, revealFinished } from './taste-model.js';
+import { OX_QUESTION_COUNT, OX_REVEAL_DURATION, emptyOxQuestions, oxQuestionsReady } from './ox-model.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
@@ -39,6 +40,7 @@ const state = {
   screenStarting: false, fullscreenFallback: false,
   tasteGames: {}, tasteVotes: {}, gameError: '', teamScores: null,
   voting: false, serverOffset: 0, scoreEntryAt: 0,
+  oxGame: {}, oxRound: {}, oxReady: false, oxQuestions: null, oxDraft: null,
 };
 let participantStops = [], presenceClose, presenceEpoch = 0, frame, composing = false;
 let rosterSaveTimer, rosterSavePromise;
@@ -171,10 +173,16 @@ function errorBanner() {
 function tasteContext(index = state.presentation?.slideIndex ?? state.slideIndex) {
   const slide = STAGES[index];
   const key = slide?.game ?? 'whisky';
-  return { key, slide, game: state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
+  return { key, slide, game: key === 'ox' ? state.oxGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
 }
 function nextBlocked() {
   const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.game === 'ox') {
+    const round = game.rounds?.[slide.questionIndex];
+    if (slide.view === 'intro') return !game.control && !oxQuestionsReady(state.oxQuestions);
+    if (slide.view === 'question') return !round || (game.control?.questionIndex === slide.questionIndex && !['closed', 'revealed'].includes(game.control.phase));
+    if (slide.view === 'reveal') return !round?.result || Date.now() + state.serverOffset < round.result.revealedAt + OX_REVEAL_DURATION;
+  }
   if (slide.view === 'vote' && !game.result) return true;
   if (slide.view === 'vote') return !['prediction-closed', 'revealed'].includes(game.control?.phase);
   if (slide.view === 'reveal') return game.control?.phase !== 'revealed' || !revealFinished(game.result, Date.now() + state.serverOffset);
@@ -183,6 +191,7 @@ function nextBlocked() {
 
 function tasteControls(disabled) {
   const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.game === 'ox') return oxControls(slide, disabled);
   const phase = game.control?.phase;
   let control = '';
   if (slide.view === 'vote') {
@@ -202,6 +211,28 @@ function tasteControls(disabled) {
   return control ? `<section class="remote-game-controls" aria-label="투표 진행">${control}</section>` : '';
 }
 
+function oxQuestionEditor() {
+  const questions = state.oxDraft ?? state.oxQuestions ?? emptyOxQuestions();
+  const disabled = state.busy || !state.online;
+  return `<section class="ox-editor" data-no-slide><h2>OX 문제 설정</h2><p>문제와 정답 5개를 저장하면 시작할 수 있습니다. 진행 중인 게임에는 시작할 때 저장한 문제가 적용됩니다.</p>
+    <div class="ox-question-fields">${Array.from({ length: OX_QUESTION_COUNT }, (_, index) => `<div class="ox-question-field"><label for="ox-text-${index}">${index + 1}번 문제</label><textarea id="ox-text-${index}" data-ox-question="${index}" maxlength="300" placeholder="문제를 입력해주세요" ${disabled ? 'disabled' : ''}>${escape(questions[index]?.text)}</textarea><label for="ox-answer-${index}">정답</label><select id="ox-answer-${index}" data-ox-answer="${index}" ${disabled ? 'disabled' : ''}><option value="">선택</option>${['O', 'X'].map(answer => `<option value="${answer}" ${questions[index]?.answer === answer ? 'selected' : ''}>${answer}</option>`).join('')}</select></div>`).join('')}</div>
+    ${button('OX 문제 저장', 'ox-save', 'dark', disabled || !state.oxDraft)}<span role="status">${state.oxDraft ? '저장 전 변경사항' : oxQuestionsReady(state.oxQuestions) ? '5개 문제 저장됨' : '문제 입력 대기'}</span></section>`;
+}
+
+function oxControls(slide, disabled) {
+  if (slide.view === 'intro') return `<section class="remote-game-controls"><p class="remote-vote-count">${state.oxGame.control || oxQuestionsReady(state.oxQuestions) ? '5문제 · 최종 생존자 1명당 50점' : '행사 관리 화면에서 OX 문제 5개와 정답을 등록해주세요.'}</p></section>`;
+  const game = state.oxGame;
+  const round = game.rounds?.[slide.questionIndex];
+  const current = game.control?.questionIndex === slide.questionIndex;
+  let control = '';
+  if (slide.view === 'question' && current) {
+    if (game.control.phase === 'ready') control = button('응답 시작', 'ox-start', 'dark', disabled);
+    if (game.control.phase === 'open') control = button('응답 마감', 'ox-close', 'dark', disabled);
+  }
+  if (slide.view === 'reveal' && current && game.control.phase === 'closed') control = button('정답 공개', 'ox-reveal', 'dark', disabled);
+  return `<section class="remote-game-controls" aria-label="OX 진행">${control}${round ? `<p class="remote-vote-count">${Object.keys(round.votes ?? {}).length} / ${Object.keys(round.eligible ?? {}).length}명 응답</p>` : ''}</section>`;
+}
+
 function rosterCard(team) {
   const online = connectedIds();
   return `<section class="team-card"><div class="team-heading"><h3>${TEAM_NAMES[team]}</h3><span id="count-${team}" class="small-count">${state.rows[team].filter(name => name.trim()).length} / 6</span></div><div class="roster">${state.rows[team].map((name, index) => {
@@ -212,7 +243,7 @@ function rosterCard(team) {
 
 function hostView() {
   if (state.presenting) return presentationView();
-  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>명단 자동 저장 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${state.managerBinding ? button('관리자 휴대폰 연결 해제', 'release-manager') : ''}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div></main>`;
+  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>명단 자동 저장 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${state.managerBinding ? button('관리자 휴대폰 연결 해제', 'release-manager') : ''}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div>${oxQuestionEditor()}</main>`;
 }
 
 function managerView() {
@@ -268,12 +299,34 @@ function tastePresentation(slide) {
       }).join('')}</div></section>`).join('')}</div>
     </section>`;
   }
-  const award = state.teamScores?.awards?.[game.control?.roundId];
+  return scorePresentation(game.control?.roundId);
+}
+
+function scorePresentation(roundId) {
+  const award = state.teamScores?.awards?.[roundId];
   const before = rankedTeams(award?.before), after = rankedTeams(award?.after ?? state.teamScores?.totals);
   return `<section class="taste-screen taste-score"><div class="scoreboard" style="--score-elapsed:-${Math.max(0, performance.now() - state.scoreEntryAt)}ms">
     ${after.map(entry => `<article class="score-row" data-team="${entry.team}" style="--from-rank:${before.find(item => item.team === entry.team).index};--to-rank:${entry.index}">
       <span class="score-rank">${entry.rank}<small>위</small></span><h2>${TEAM_NAMES[entry.team]}</h2><span class="score-earned">+${award?.points[entry.team] ?? 0}</span><strong data-score-team="${entry.team}">${entry.score}</strong><span class="score-unit">점</span>
     </article>`).join('')}</div></section>`;
+}
+
+function oxPresentation(slide) {
+  if (slide.view === 'intro') return `<section class="taste-screen ox-intro"><span class="taste-eyebrow">RECREATION 02</span><h1>OX 퀴즈</h1><div class="ox-rules"><p><b>5</b> 문제 연속 도전</p><p>정답자만 다음 문제로</p><p>최종 생존자 1명당 <strong>+50점</strong></p></div></section>`;
+  if (slide.view === 'score') return scorePresentation(state.oxGame.control?.roundId);
+  const round = state.oxGame.rounds?.[slide.questionIndex];
+  const result = slide.view === 'reveal' ? round?.result : null;
+  const elapsed = result ? Math.max(0, Date.now() + state.serverOffset - result.revealedAt) : 0;
+  const current = state.oxGame.control?.questionIndex === slide.questionIndex;
+  return `<section class="taste-screen ox-screen ${result ? 'is-revealed' : ''}" style="--ox-delay:-${elapsed}ms">
+    <header class="ox-heading"><span>OX QUIZ</span><span>${String(slide.questionIndex + 1).padStart(2, '0')} / 05</span></header>
+    <h1 class="ox-prompt ${(round?.prompt.length ?? 0) > 100 ? 'is-long' : ''}">${escape(round?.prompt ?? '')}</h1>
+    <div class="ox-symbols" aria-label="${result ? `정답 ${result.answer}` : 'O 또는 X'}">${['O', 'X'].map(answer => `<div class="ox-symbol ${result ? result.answer === answer ? 'is-correct' : 'is-wrong' : ''}" data-answer="${answer}">${answer}</div>`).join('')}</div>
+    ${result ? `<div class="ox-survivors">${TEAM_IDS.map(team => {
+      const survivors = Object.keys(result.survivors ?? {}).filter(id => state.oxGame.roster[id]?.team === team).length;
+      return `<div data-team="${team}"><span>${TEAM_NAMES[team]}</span><strong>${survivors}<small>명 생존</small></strong></div>`;
+    }).join('')}</div>` : `<p class="ox-status">${slide.view === 'reveal' ? '정답 공개를 기다려주세요' : current && state.oxGame.control?.phase === 'open' ? '휴대폰에서 O 또는 X를 선택해주세요' : current && state.oxGame.control?.phase === 'ready' ? '응답을 준비하고 있습니다' : '응답이 마감되었습니다'}</p>`}
+  </section>`;
 }
 
 function joinNetworkView() {
@@ -330,7 +383,7 @@ function presentationView() {
   if (slide.id === 'join') {
     content = joinNetworkView();
   } else if (state.slideIndex >= 2) {
-    content = tastePresentation(slide);
+    content = slide.game === 'ox' ? oxPresentation(slide) : tastePresentation(slide);
   } else {
     const message = state.winner
       ? `<h2 id="winner-name">${escape(state.winner.name)}</h2><p class="winner-team">${TEAM_NAMES[state.winner.team]}</p>`
@@ -340,7 +393,7 @@ function presentationView() {
       <div class="race-copy">${message}</div>
     </section>`;
   }
-  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${resetControl}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
+  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main">${content}</main>${resetControl}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
 }
 
 function participantTasteView() {
@@ -358,6 +411,17 @@ function participantTasteView() {
   </main>`;
 }
 
+function participantOxView() {
+  const slide = STAGES[state.presentation?.slideIndex];
+  const round = state.oxRound;
+  const current = state.oxGame.control?.questionIndex === slide.questionIndex;
+  const open = slide.view === 'question' && current && state.oxGame.control?.phase === 'open';
+  if (open && round.eligible && !round.vote) return `<main class="controller-main taste-mobile ox-mobile is-voting" data-team="${state.participant.team}">${errorBanner()}<div class="mobile-vote-options" role="group" aria-label="OX 응답" style="--vote-option-count:2">${['O', 'X'].map(answer => `<button data-ox-vote="${answer}" ${!state.oxReady || state.voting || !state.online || state.controlsLocked ? 'disabled' : ''}>${answer}</button>`).join('')}</div></main>`;
+  const eliminated = state.oxReady && slide.view !== 'intro' && (!round.eligible || (round.result && !round.result.survivors?.[state.participantId]));
+  const message = eliminated ? '탈락' : round.result?.survivors?.[state.participantId] ? slide.view === 'score' ? '최종 생존' : '정답입니다' : '대기 중';
+  return `<main class="controller-main taste-mobile ox-mobile" data-team="${state.participant.team}">${errorBanner()}<h1>${message}</h1></main>`;
+}
+
 function participantView() {
   const portrait = matchMedia('(orientation: portrait)').matches;
   const enteringName = state.role === 'participant' && !state.participant;
@@ -365,7 +429,7 @@ function participantView() {
   if (!enteringName && (portrait || needsFullscreen)) return `<main class="controller-gate"><h1>${needsFullscreen ? '전체화면 버튼을<br/>눌러주세요.' : '가로 화면으로 진행합니다.'}</h1><p>${needsFullscreen ? '버튼을 누르면 가로 전체화면으로 시작합니다.' : '기기를 가로로 돌려 참여해주세요.'}</p>${errorBanner()}${needsFullscreen ? `<button class="button dark" data-action="controller-start" ${state.screenStarting ? 'disabled' : ''}>${state.screenStarting ? '전환 중…' : '전체화면으로 시작'}</button>` : ''}</main>`;
   if (state.role === 'manager') return managerView();
   if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>참가자 입장</h1><p>등록된 이름을 입력하세요.</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${TEAM_NAMES[id[0]]} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
-  if (state.presentation?.active && state.presentation.slideIndex >= 2) return participantTasteView();
+  if (state.presentation?.active && state.presentation.slideIndex >= 2) return STAGES[state.presentation.slideIndex]?.game === 'ox' ? participantOxView() : participantTasteView();
   const result = touchRoundResult(state.instruction, state.stage, state.presentation, state.participantId);
   const active = touchRoundIsActive(state.instruction, state.stage) && !result;
   const submitted = Boolean(state.instruction?.id) && (state.submittedRoundId === state.instruction.id || state.response?.instructionId === state.instruction.id);
@@ -397,8 +461,10 @@ function render() {
   if (focusId) { const input = document.getElementById(focusId); if (input) { input.focus({ preventScroll: true }); if (selection && input.setSelectionRange) input.setSelectionRange(...selection); } }
   clearTimeout(revealTimer);
   const { slide, game } = tasteContext(state.slideIndex);
-  if (state.presenting && slide.view === 'reveal' && game.control?.phase === 'revealed' && game.result) {
-    const remaining = game.result.revealedAt + Object.keys(game.result.order ?? {}).length * REVEAL_INTERVAL + 450 - Date.now() - state.serverOffset;
+  const result = slide.game === 'ox' ? game.rounds?.[slide.questionIndex]?.result : game.result;
+  if (state.presenting && slide.view === 'reveal' && result) {
+    const duration = slide.game === 'ox' ? OX_REVEAL_DURATION : Object.keys(result.order ?? {}).length * REVEAL_INTERVAL + 450;
+    const remaining = result.revealedAt + duration - Date.now() - state.serverOffset;
     if (remaining > 0) revealTimer = setTimeout(schedule, remaining + 20);
   }
   animateScoreNumbers();
@@ -449,8 +515,13 @@ async function moveTo(index) {
     chooseWinner();
   } else {
     const { key, slide } = tasteContext(index);
-    state.tasteGames[key] = await api.ensureTasteGame(state.room, state.participants, key, resetAt);
-    if (slide.view === 'score') state.teamScores = await api.awardTastePoints(state.room, key);
+    if (key === 'ox') {
+      if (slide.view === 'question') state.oxGame = await api.prepareOxQuestion(state.room, state.participants, slide.questionIndex, resetAt);
+      if (slide.view === 'score') state.teamScores = await api.awardOxPoints(state.room);
+    } else {
+      state.tasteGames[key] = await api.ensureTasteGame(state.room, state.participants, key, resetAt);
+      if (slide.view === 'score') state.teamScores = await api.awardTastePoints(state.room, key);
+    }
     await api.setPresentationSlide(state.room, index, resetAt);
     state.slideIndex = index;
     state.winner = null; state.raceRoundId = null;
@@ -501,6 +572,20 @@ async function voteTaste(optionId) {
     await api.submitTasteVote(state.room, state.participantId, prediction ? 'prediction' : 'preference', optionId, key);
     if (state.tasteVotes[key] === votes) votes[prediction ? 'prediction' : 'preference'] = { optionId };
   } catch { showError('투표를 제출하지 못했어요. 투표가 마감되었는지 또는 연결 상태를 확인해주세요.'); }
+  finally { state.voting = false; schedule(); }
+}
+
+async function voteOx(answer) {
+  const { slide, game } = tasteContext();
+  const round = state.oxRound;
+  if (!state.online || state.voting || state.controlsLocked || document.hidden || !state.participantId
+    || slide.game !== 'ox' || slide.view !== 'question' || game.control?.questionIndex !== slide.questionIndex
+    || game.control.phase !== 'open' || !state.oxReady || !round.eligible || round.vote) return;
+  state.voting = true; state.error = ''; schedule();
+  try {
+    await api.submitOxVote(state.room, state.participantId, slide.questionIndex, answer, game.control.roundId);
+    if (state.oxRound === round) round.vote = { answer };
+  } catch { showError('응답을 제출하지 못했어요. 마감 여부와 연결 상태를 확인해주세요.'); }
   finally { state.voting = false; schedule(); }
 }
 
@@ -558,6 +643,17 @@ async function action(name, errorId) {
       await api.setPresentation(state.room, false, state.presentation?.resetAt ?? null);
       state.presenting = false; state.raceRoundId = null; state.winner = null;
     }
+    if (name === 'ox-save') {
+      const questions = state.oxDraft;
+      if (questions) {
+        await api.saveOxQuestions(state.room, questions);
+        if (state.oxDraft === questions) state.oxDraft = null;
+      }
+    }
+    if (['ox-start', 'ox-close', 'ox-reveal'].includes(name)) {
+      const slide = STAGES[state.slideIndex];
+      state.oxGame = await api.changeOxPhase(state.room, slide.questionIndex, name, state.oxGame.control?.roundId);
+    }
     if (['start-preference', 'stop-preference', 'start-prediction', 'stop-prediction', 'reveal-answer', 'reveal-taste'].includes(name)) {
       const { key } = tasteContext();
       state.tasteGames[key] = await api.changeTastePhase(state.room, name, key);
@@ -570,6 +666,13 @@ async function action(name, errorId) {
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
   document.querySelectorAll('[data-vote]').forEach(control => control.addEventListener('click', () => { void voteTaste(control.dataset.vote); }));
+  document.querySelectorAll('[data-ox-vote]').forEach(control => control.addEventListener('click', () => { void voteOx(control.dataset.oxVote); }));
+  document.querySelectorAll('[data-ox-question], [data-ox-answer]').forEach(control => control.addEventListener('input', () => {
+    const index = control.dataset.oxQuestion ?? control.dataset.oxAnswer;
+    const questions = state.oxDraft ?? state.oxQuestions ?? emptyOxQuestions();
+    state.oxDraft = { ...questions, [index]: { ...questions[index], [control.dataset.oxQuestion === undefined ? 'answer' : 'text']: control.value } };
+    schedule();
+  }));
   const script = $('#manager-script');
   if (script) {
     let startX, startScroll;
@@ -647,6 +750,7 @@ function attachParticipant(id) {
   participantStops.forEach(stop => stop()); participantStops = []; state.participantId = id;
   state.participant = null; state.instruction = null; state.response = null; state.responseReady = false; state.submittedRoundId = null;
   state.tasteGames = {}; state.tasteVotes = {};
+  state.oxGame = {}; state.oxRound = {}; state.oxReady = false;
   if (!id) { watchActiveTaste(); presenceEpoch++; presenceClose?.().catch(() => {}); presenceClose = null; state.participant = null; state.instruction = null; state.response = null; schedule(); return; }
   participantStops.push(api.watch(state.room, `participants/${id}`, person => { state.participant = person; void syncPresence(); schedule(); }, showError));
   participantStops.push(api.watch(state.room, `instructions/${id}`, instruction => { state.instruction = instruction; schedule(); }, showError));
@@ -655,12 +759,26 @@ function attachParticipant(id) {
 }
 
 function watchActiveTaste() {
-  const { key } = tasteContext();
-  const watchKey = `${state.role}:${state.participantId ?? ''}:${key}`;
+  const { key, slide } = tasteContext();
+  const questionIndex = slide?.questionIndex ?? (slide?.view === 'score' ? OX_QUESTION_COUNT - 1 : 0);
+  const watchKey = `${state.role}:${state.participantId ?? ''}:${key}:${key === 'ox' ? questionIndex : ''}`;
   if (watchKey === tasteWatchKey) return;
   tasteStops.forEach(stop => stop()); tasteStops = []; tasteWatchKey = null;
   if (!state.uid || !state.room || (state.role === 'participant' && !state.participantId)) return;
   tasteWatchKey = watchKey;
+  if (key === 'ox') {
+    if (state.role === 'participant') {
+      state.oxRound = {}; state.oxReady = false;
+      const ready = new Set();
+      tasteStops.push(api.watch(state.room, 'oxGame/control', value => { state.oxGame.control = value; schedule(); }, showError));
+      for (const [field, path] of Object.entries({ eligible: `eligible/${state.participantId}`, vote: `votes/${state.participantId}`, result: 'result' })) {
+        tasteStops.push(api.watch(state.room, `oxGame/rounds/${questionIndex}/${path}`, value => {
+          state.oxRound[field] = value; ready.add(field); state.oxReady = ready.size === 3; schedule();
+        }, showError));
+      }
+    } else tasteStops.push(api.watch(state.room, 'oxGame', value => { state.oxGame = value ?? {}; schedule(); }, showGameError));
+    return;
+  }
   const { path } = TASTE_ROUNDS[key];
   if (state.role === 'participant') {
     state.tasteGames[key] ??= {}; state.tasteVotes[key] ??= {};
@@ -678,6 +796,7 @@ function syncPresentation(presentation) {
     state.response = null;
     state.tasteGames = {};
     state.tasteVotes = {};
+    state.oxGame = {}; state.oxRound = {}; state.oxReady = false;
     state.teamScores = null;
     tasteWatchKey = null;
     state.operatorError = null;
@@ -719,6 +838,7 @@ function watchManagement() {
   watchActiveTaste();
   managementStops.push(api.watch(state.room, 'teamScores', value => { state.teamScores = value; schedule(); }, showGameError));
   managementStops.push(api.watch(state.room, 'operatorError', value => { state.operatorError = value; schedule(); }, showError));
+  managementStops.push(api.watch(state.room, 'oxQuestions', value => { state.oxQuestions = value; schedule(); }, showGameError));
   if (state.role === 'host') managementStops.push(api.watch(state.room, 'responses', value => { state.responses = value ?? {}; chooseWinner(); schedule(); }, showError));
 }
 

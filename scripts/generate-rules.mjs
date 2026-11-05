@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { STAGES } from '../src/event-model.js';
 
 const s = "root.child('mtChatV1/sessions').child($session)";
 const owner = `auth != null && ${s}.child('meta/ownerUid').val() === auth.uid`;
@@ -69,6 +70,55 @@ function tasteGameRules(path, voteIndex) {
     '$other': denyExtra,
   };
 }
+const ox = `${s}.child('oxGame')`;
+const oxQuestions = {
+  '.validate': "newData.hasChildren(['0','1','2','3','4'])",
+  '$question': {
+    '.validate': "$question.matches(/^[0-4]$/) && newData.hasChildren(['text','answer'])",
+    text: { '.validate': 'newData.isString() && newData.val().length <= 300' },
+    answer: { '.validate': "newData.val() === '' || newData.val() === 'O' || newData.val() === 'X'" },
+    '$other': denyExtra,
+  },
+};
+const oxQuestionScreens = STAGES.map((stage, index) => stage.game === 'ox' && stage.view === 'question'
+  ? `($question === '${stage.questionIndex}' && ${s}.child('presentation/slideIndex').val() === ${index})` : null).filter(Boolean).join(' || ');
+const oxGameRules = {
+  '.read': controller, '.write': controller,
+  '.validate': `newData.hasChildren(['control','questions','roster','rounds']) && newData.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+  control: {
+    '.read': gameReader, '.validate': "newData.hasChildren(['roundId','questionIndex','phase','updatedAt'])",
+    roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' },
+    questionIndex: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() < 5 && newData.val() % 1 === 0' },
+    phase: { '.validate': "newData.val() === 'ready' || newData.val() === 'open' || newData.val() === 'closed' || newData.val() === 'revealed'" },
+    updatedAt: storedTimestamp, '$other': denyExtra,
+  },
+  questions: oxQuestions,
+  roster: tasteGameRules('oxGame', 0).roster,
+  rounds: {
+    '$question': {
+      '.validate': "$question.matches(/^[0-4]$/) && newData.hasChild('prompt')",
+      prompt: { '.read': gameReader, ...text(300) },
+      eligible: { '$participant': { '.read': self, '.validate': "newData.val() === true && newData.parent().parent().parent().parent().child('roster').child($participant).exists()" } },
+      votes: {
+        '$participant': {
+          '.read': self,
+          '.write': `${self} && ${s}.child('presentation/active').val() === true && (${oxQuestionScreens}) && ${ox}.child('control/phase').val() === 'open' && ${ox}.child('control/questionIndex').val() + '' === $question && ${ox}.child('rounds').child($question).child('eligible').child($participant).val() === true && !data.exists() && newData.exists()`,
+          '.validate': `newData.hasChildren(['answer','roundId','submittedAt']) && newData.child('roundId').val() === ${ox}.child('control/roundId').val()`,
+          answer: { '.validate': "newData.val() === 'O' || newData.val() === 'X'" },
+          roundId: text(20), submittedAt: storedTimestamp, '$other': denyExtra,
+        },
+      },
+      result: {
+        '.read': gameReader, '.validate': "newData.hasChildren(['answer','revealedAt'])",
+        answer: { '.validate': "newData.val() === 'O' || newData.val() === 'X'" },
+        survivors: { '$participant': { '.validate': `newData.val() === true && ${ox}.child('roster').child($participant).exists()` } },
+        revealedAt: storedTimestamp, '$other': denyExtra,
+      },
+      '$other': denyExtra,
+    },
+  },
+  '$other': denyExtra,
+};
 const session = {
   '.read': owner,
   '.write': "auth != null && !data.exists() && newData.child('meta/ownerUid').val() === auth.uid && $session.matches(/^[A-Za-z0-9_-]{20}$/)",
@@ -177,7 +227,7 @@ const session = {
     '.read': 'auth != null', '.write': controller,
     '.validate': `newData.hasChildren(['active','slideIndex','updatedAt']) && (newData.child('resetAt').val() === data.child('resetAt').val() || ((${owner}) && newData.child('active').val() === true && newData.child('slideIndex').val() === 0 && newData.child('resetAt').val() === now && !newData.child('roundId').exists() && !newData.child('winnerId').exists()))`,
     active: { '.validate': 'newData.isBoolean()' },
-    slideIndex: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 11 && newData.val() % 1 === 0' },
+    slideIndex: { '.validate': `newData.isNumber() && newData.val() >= 0 && newData.val() <= ${STAGES.length - 1} && newData.val() % 1 === 0` },
     roundId: text(20), resetAt: storedTimestamp,
     winnerId: { '.validate': `newData.isString() && ${s}.child('participants').child(newData.val()).exists()` },
     updatedAt: timestamp, '$other': denyExtra,
@@ -185,6 +235,8 @@ const session = {
   tasteGame: tasteGameRules('tasteGame', 3),
   sojuGame: tasteGameRules('sojuGame', 6),
   militaryGame: tasteGameRules('militaryGame', 9),
+  oxQuestions: { '.read': controller, '.write': controller, ...oxQuestions },
+  oxGame: oxGameRules,
   teamScores: {
     '.read': gameReader, '.write': controller, '.validate': `newData.hasChildren(['totals','awards']) && newData.child('resetAt').val() === ${s}.child('presentation/resetAt').val()`,
     resetAt: { '.validate': 'newData.isNumber()' },

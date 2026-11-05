@@ -24,6 +24,12 @@ export const STAGES = [
   { id: 'military-vote', screenCode: 11, game: 'military', view: 'vote', title: '육군·공군·해병대 투표', script: '이번에는 육군, 공군, 해병대입니다. 셋 중에서 선택한다면 어느 곳을 고를지 투표해주세요. 이어서 가장 많은 표를 받았을 곳을 예상해 다시 투표합니다.' },
   { id: 'military-reveal', screenCode: 12, game: 'military', view: 'reveal', title: '정답자 공개', script: '육군, 공군, 해병대 중 가장 많은 선택을 받은 곳을 맞힌 정답자를 공개하겠습니다.' },
   { id: 'military-score', screenCode: 13, game: 'military', view: 'score', title: '팀 점수', script: '정답자 한 명당 10점을 누적합니다. 세 가지 주제의 점수를 합친 현재 순위를 확인하겠습니다.' },
+  { id: 'ox-intro', screenCode: 14, game: 'ox', view: 'intro', title: 'OX 퀴즈', script: '다음 게임은 OX 퀴즈입니다. 총 다섯 문제이며, 정답을 맞힌 사람만 다음 문제에 도전할 수 있습니다. 응답하지 않으면 탈락입니다. 마지막까지 살아남은 사람 한 명당 팀에 50점을 드립니다.' },
+  ...Array.from({ length: 5 }, (_, questionIndex) => [
+    { id: `ox-question-${questionIndex + 1}`, screenCode: 15 + questionIndex * 2, game: 'ox', view: 'question', questionIndex, title: `OX ${questionIndex + 1}번 문제`, script: `${questionIndex + 1}번 문제입니다. 문제를 듣고 휴대폰에서 O 또는 X를 선택해주세요. 선택은 한 번만 가능합니다.` },
+    { id: `ox-reveal-${questionIndex + 1}`, screenCode: 16 + questionIndex * 2, game: 'ox', view: 'reveal', questionIndex, title: `OX ${questionIndex + 1}번 정답`, script: '응답이 마감되었습니다. 정답을 공개하겠습니다.' },
+  ]).flat(),
+  { id: 'ox-score', screenCode: 25, game: 'ox', view: 'score', title: 'OX 최종 점수', script: '다섯 문제를 모두 맞힌 최종 생존자 한 명당 팀에 50점을 더합니다. 누적 점수를 확인하겠습니다.' },
 ];
 export function participantUrl(href, room, networkUrl) {
   const url = new URL(href);

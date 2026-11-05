@@ -3,6 +3,34 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { rosterFromInputs, rowsFromParticipants, readRosterDraft, TEAM_NAMES, STAGES, nameKey, messageText, onlineParticipants, participantUrl, friendlyError, firstTouch, touchRoundIsActive, touchRoundResult, stageIndex, TOUCH_TITLE, TOUCH_BODY } from '../src/event-model.js';
 import { WHISKY_OPTIONS, SOJU_OPTIONS, MILITARY_OPTIONS, TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward, rankedTeams, revealFinished, REVEAL_INTERVAL } from '../src/taste-model.js';
+import { emptyOxQuestions, oxQuestionsReady, oxSurvivors, oxPoints } from '../src/ox-model.js';
+
+test('OX has five empty questions and alternating question/reveal screens', () => {
+  const empty = emptyOxQuestions();
+  assert.equal(Object.keys(empty).length, 5);
+  assert.ok(Object.values(empty).every(question => question.text === '' && question.answer === ''));
+  assert.equal(oxQuestionsReady(empty), false);
+  const ready = Object.fromEntries(Object.keys(empty).map(index => [index, { text: `검증 ${index}`, answer: 'O' }]));
+  assert.equal(oxQuestionsReady(ready), true);
+  assert.equal(oxQuestionsReady({ ...ready, 0: { text: '   ', answer: 'O' } }), false);
+  assert.equal(oxQuestionsReady({ ...ready, 0: { text: '문제', answer: '' } }), false);
+  const stages = STAGES.filter(stage => stage.game === 'ox');
+  assert.deepEqual(stages.map(stage => stage.screenCode), Array.from({ length: 12 }, (_, index) => index + 14));
+  assert.deepEqual(stages.slice(1, -1).map(stage => stage.view), Array.from({ length: 5 }, () => ['question', 'reveal']).flat());
+});
+
+test('OX eliminates wrong and missing answers permanently and awards fifty points per final survivor once', () => {
+  const first = oxSurvivors({ eligible: { A1: true, A2: true, B1: true }, votes: { A1: { answer: 'O' }, A2: { answer: 'X' }, C1: { answer: 'O' } } }, 'O');
+  assert.deepEqual(first, { A1: true });
+  assert.deepEqual(oxSurvivors({ eligible: first, votes: { A1: { answer: 'X' }, A2: { answer: 'O' } } }, 'O'), {});
+  const points = oxPoints({ roster: { A1: { team: 'A' }, A2: { team: 'A' }, B1: { team: 'B' } }, rounds: { 4: { result: { survivors: { A1: true, A2: true, B1: true } } } } });
+  assert.deepEqual(points, { A: 100, B: 50, C: 0, D: 0 });
+  const previous = scoreAward(null, 'taste', { A: 10, B: 20, C: 0, D: 0 }, 1);
+  const final = scoreAward(previous, 'ox', points, 2);
+  assert.deepEqual(final.totals, { A: 110, B: 70, C: 0, D: 0 });
+  assert.equal(scoreAward(final, 'ox', points, 3), final);
+  assert.deepEqual(oxPoints({ roster: {}, rounds: {} }), { A: 0, B: 0, C: 0, D: 0 });
+});
 
 test('roster uses stable IDs, ignores blank slots, and indexes duplicate names across teams', () => {
   const roster = rosterFromInputs({ A: [' 김 지민 ', '', '이서연'], B: ['김지민'], C: [], D: [] }, { A: '민트팀', B: '라임팀', C: 'C조', D: 'D조' });
