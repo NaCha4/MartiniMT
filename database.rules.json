@@ -856,6 +856,9 @@
               "focusY": {
                 ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
               },
+              "zoom": {
+                ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 80"
+              },
               "$other": {
                 ".validate": false
               }
@@ -908,6 +911,9 @@
                 },
                 "focusY": {
                   ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+                },
+                "zoom": {
+                  ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 80"
                 },
                 "$other": {
                   ".validate": false

@@ -111,7 +111,17 @@ test('whisky, soju and military votes, reveals and cumulative scores survive rev
     await host.screenshot({ path: '.cache/screenshots/taste-06-revealed.png' });
     const originalOrder = await host.locator('.reveal-person.is-correct').evaluateAll(nodes => nodes.map(node => [node.dataset.person, node.style.getPropertyValue('--reveal-delay')]));
     expect(new Set(originalOrder.map(([, delay]) => delay)).size).toBe(3);
-    await Promise.all([next(), host.locator('.presentation').click({ position: { x: 16, y: 16 } })]);
+    const advanceAt = Date.now() + 200;
+    await Promise.all([
+      remote.evaluate(at => new Promise(resolve => setTimeout(() => {
+        document.querySelector('[data-action="next"]').click();
+        resolve();
+      }, Math.max(0, at - Date.now()))), advanceAt),
+      host.evaluate(at => new Promise(resolve => setTimeout(() => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        resolve();
+      }, Math.max(0, at - Date.now()))), advanceAt),
+    ]);
     await expect(host.locator('.presentation-screen-code')).toHaveText('7');
     await expect(host.locator('.taste-eyebrow, .taste-screen h1')).toHaveCount(0);
     await expect(host.locator('[data-score-team="A"]')).toHaveText('20');

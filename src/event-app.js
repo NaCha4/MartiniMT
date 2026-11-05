@@ -76,6 +76,7 @@ let controlsUnlockTimer, scriptPosition;
 let revealTimer, scoreFrame;
 let zoomTimer, zoomAdvancing = false, zoomRetryAt = 0;
 let zoomEditing = false;
+window.addEventListener('blur', () => { zoomEditing = false; schedule(); });
 let gameWatchKey;
 const watchRoom = (path, onValue, onError) => api.watch(state.room, path, onValue, onError);
 const participantSubscriptions = createSubscriptionGroup(watchRoom);

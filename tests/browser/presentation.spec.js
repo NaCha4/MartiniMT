@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('presentation errors appear only on the remote and dismissal preserves newer errors', async ({ browser }) => {
+test('local presentation errors stay dismissible and remote dismissal preserves newer errors', async ({ browser }) => {
   const desktop = await browser.newContext({ viewport: { width: 1366, height: 768 }, screen: { width: 1920, height: 1080 } });
   const mobile = await browser.newContext({ viewport: { width: 900, height: 420 }, isMobile: true, hasTouch: true });
   await mobile.addInitScript(() => Object.defineProperty(document, 'fullscreenEnabled', { get: () => false }));
@@ -23,11 +23,13 @@ test('presentation errors appear only on the remote and dismissal preserves newe
     });
     await host.getByRole('button', { name: '전체화면', exact: true }).click();
     await expect(remote.getByRole('alert')).toContainText('전체화면으로 전환할 수 없습니다.');
-    await expect(host.getByRole('alert')).toHaveCount(0);
+    await expect(host.getByRole('alert')).toContainText('전체화면으로 전환할 수 없습니다.');
     await expect(host.locator('.presentation-screen-code')).toHaveText('1');
     await remote.screenshot({ path: '.cache/screenshots/remote-operator-error.png' });
     await remote.getByRole('button', { name: '닫기', exact: true }).click();
     await expect(remote.getByRole('alert')).toHaveCount(0);
+    await host.getByRole('button', { name: '닫기', exact: true }).click();
+    await expect(host.getByRole('alert')).toHaveCount(0);
     expect(errors).toEqual([]);
 
     await host.evaluate(async () => {
@@ -51,7 +53,8 @@ test('presentation errors appear only on the remote and dismissal preserves newe
 async function clickSlide(page, button = 'left') {
   const slide = page.locator('.presentation');
   await expect(slide).toHaveAttribute('aria-busy', 'false');
-  await slide.click({ button, position: { x: 16, y: 16 } });
+  if (button === 'right') await slide.click({ button, position: { x: 16, y: 16 } });
+  else await page.keyboard.press('ArrowRight');
 }
 
 test('presentation navigation, live check-in, fullscreen and first-touch race', async ({ browser }) => {
