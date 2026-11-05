@@ -30,6 +30,14 @@ test('photo configuration requires five bounded images and valid crop coordinate
   assert.equal(zoomQuestionsReady({ ...questions, 0: { ...questions[0], image: 'x'.repeat(1500001) } }), false);
 });
 
+test('the zoom introduction omits the magnification sequence below the title', () => {
+  const html = zoomPresentation({}, questions, { view: 'intro' }, 0);
+  assert.match(html, /무엇일까요/);
+  assert.doesNotMatch(html, /zoom-intro-steps|40×|12×|4×|1×/);
+  assert.match(html, /총 5문제/);
+  assert.match(html, /50점/);
+});
+
 test('judgment binds to the active request and an incorrect player is blocked for this photo', () => {
   const current = game();
   assert.equal(judgeZoomRequest(current, 'old-request', true, 2000), undefined);

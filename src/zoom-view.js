@@ -14,7 +14,7 @@ export function zoomEditor(questions, disabled, dirty) {
 }
 
 export function zoomPresentation(game, questions, slide, now) {
-  if (slide.view === 'intro') return `<section class="taste-screen zoom-intro"><span class="taste-eyebrow">RECREATION 03</span><h1>이 사진은<br/><em>무엇일까요?</em></h1><div class="zoom-intro-steps"><span>40×</span><i>→</i><span>12×</span><i>→</i><span>4×</span><i>→</i><span>1×</span></div><p>총 5문제 · 선착순 정답 요청 · 정답 한 개당 <b>50점</b></p></section>`;
+  if (slide.view === 'intro') return `<section class="taste-screen zoom-intro"><span class="taste-eyebrow">RECREATION 03</span><h1>이 사진은<br/><em>무엇일까요?</em></h1><p>총 5문제 · 선착순 정답 요청 · 정답 한 개당 <b>50점</b></p></section>`;
   const question = game.questions?.[slide.questionIndex] ?? questions[slide.questionIndex];
   const round = game.rounds?.[slide.questionIndex] ?? {};
   const current = game.control?.questionIndex === slide.questionIndex;

@@ -763,8 +763,6 @@ dialog textarea { resize: vertical; }
 .zoom-intro h1 { margin: 3vh 0; font-size: clamp(58px, 8vw, 140px); line-height: 1.08; letter-spacing: -.06em; }
 .zoom-intro h1 em { color: var(--color-accent); font-style: normal; }
 .zoom-intro p { font-size: clamp(18px, 2vw, 34px); color: var(--color-text-secondary); }
-.zoom-intro-steps { display: flex; gap: 2vw; align-items: center; font-size: clamp(30px, 4vw, 70px); font-weight: 650; }
-.zoom-intro-steps i { color: var(--color-text-secondary); font-size: .6em; font-style: normal; }
 .zoom-screen { width: 100%; height: 100%; display: flex; flex-direction: column; padding: 4vh 5vw; gap: 2vh; box-sizing: border-box; }
 .zoom-screen > header { display: flex; align-items: center; justify-content: space-between; color: var(--color-text-secondary); font-size: clamp(14px, 1.4vw, 24px); letter-spacing: .12em; }
 .zoom-screen > header strong { color: var(--color-text); font-size: 1.5em; }
