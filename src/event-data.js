@@ -7,7 +7,7 @@ import { ROOT, TEAM_IDS, nameKey, TOUCH_TITLE, TOUCH_BODY } from './event-model.
 import { TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward } from './taste-model.js';
 import { OX_QUESTION_COUNT, oxQuestionsReady, oxSurvivors, oxPoints } from './ox-model.js';
 import { ZOOM_QUESTION_COUNT, ZOOM_LEVELS, zoomQuestionsReady, zoomPoints, judgeZoomRequest, finishZoomFeedback } from './zoom-model.js';
-import { liarRosterReady, liarOutcome } from './liar-model.js';
+import { liarRosterReady, liarTally, liarOutcome, liarRevealFinished } from './liar-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -305,12 +305,13 @@ export async function finishZoomRound(room, roundId, questionIndex, requestId, n
   return result.snapshot.val();
 }
 
-export function followZoomSlide(room, expectedIndex, nextIndex, resetAt) {
+export function followPresentationSlide(room, expectedIndex, nextIndex, resetAt) {
   return transactLoaded(locationRef(room, 'presentation'), current => {
     if (!current?.active || current.slideIndex !== expectedIndex || (current.resetAt ?? null) !== resetAt) return;
     return { ...current, slideIndex: nextIndex, updatedAt: serverTimestamp() };
   });
 }
+export const followZoomSlide = followPresentationSlide;
 
 export async function awardZoomPoints(room) {
   const game = await read(room, 'zoomGame');
@@ -351,7 +352,7 @@ export async function claimLiarEntry(room, participantId, questionIndex, roundId
 }
 
 export async function changeLiarPhase(room, questionIndex, roundId, action) {
-  const expected = { 'liar-deal': 'selecting', 'liar-vote': 'describing', 'liar-finish': 'voting' }[action];
+  const expected = { 'liar-deal': 'selecting', 'liar-vote': 'describing', 'liar-finish': 'voting', 'liar-reveal': 'closed' }[action];
   const random = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
   const result = await transactLoaded(locationRef(room, 'liarGame'), current => {
     if (current?.control?.roundId !== roundId || current.control.questionIndex !== questionIndex || current.control.phase !== expected) return;
@@ -365,8 +366,11 @@ export async function changeLiarPhase(room, questionIndex, roundId, action) {
       updated = { ...round, secret: { liarId }, cards: Object.fromEntries(contestants.map(person => [person.participantId, { word: person.participantId === liarId ? '' : word, deliveredAt: serverTimestamp() }])) };
       phase = 'describing';
     } else if (action === 'liar-vote') phase = 'voting';
-    else {
+    else if (action === 'liar-finish') {
       if (!Object.keys(round.votes ?? {}).length) throw { userMessage: '한 명 이상 투표한 뒤 종료해주세요.' };
+      updated.tally = { ...liarTally(round), closedAt: serverTimestamp() };
+      phase = 'closed';
+    } else {
       updated.result = { ...liarOutcome(round, round.secret.liarId), revealedAt: serverTimestamp() };
       phase = 'finished';
     }
@@ -378,10 +382,10 @@ export async function changeLiarPhase(room, questionIndex, roundId, action) {
 
 export const submitLiarVote = (room, voterId, questionIndex, participantId, roundId) => set(locationRef(room, `liarGame/rounds/${questionIndex}/votes/${voterId}`), { participantId, roundId, submittedAt: serverTimestamp() });
 
-export async function awardLiarPoints(room, questionIndex) {
+export async function awardLiarPoints(room, questionIndex, now = Date.now()) {
   const game = await read(room, 'liarGame');
   const round = game?.rounds?.[questionIndex];
-  if (!round?.result) throw { userMessage: '라이어 투표를 먼저 종료해주세요.' };
+  if (!liarRevealFinished(round, now)) throw { userMessage: '라이어 공개 애니메이션이 끝난 뒤 점수를 반영합니다.' };
   const result = await transactLoaded(locationRef(room, 'teamScores'), current => {
     if (current?.awards?.[round.roundId]) return;
     return { ...scoreAward(current, round.roundId, round.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };

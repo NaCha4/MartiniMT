@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { STAGES, TEAM_IDS, stageIndex } from '../src/event-model.js';
-import { liarRosterReady, liarUsedIds, liarOutcome } from '../src/liar-model.js';
+import { LIAR_REVEAL_DURATION, liarRosterReady, liarUsedIds, liarOutcome, liarTally, liarRevealFinished } from '../src/liar-model.js';
 import { LIAR_PROMPTS } from '../src/liar-prompts.js';
 import { liarPresentation, liarParticipant } from '../src/liar-view.js';
 import { scoreAward } from '../src/taste-model.js';
@@ -32,6 +34,29 @@ test('liar counts only audience votes and treats tied first place as caught', ()
   assert.equal(scoreAward(second, 'round2', escaped.points, 3), second);
 });
 
+test('public vote totals contain no answer and the reveal must finish before scoring', () => {
+  const round = { contestants, votes: { A2: { participantId: 'B1' }, B2: { participantId: 'B1' } } };
+  assert.deepEqual(liarTally(round), { counts: { A1: 0, B1: 2, C1: 0, D1: 0 }, topIds: { B1: true } });
+  assert.equal(liarRevealFinished(round, 10000), false);
+  round.result = { revealedAt: 1000 };
+  assert.equal(liarRevealFinished(round, 1000 + LIAR_REVEAL_DURATION - 1), false);
+  assert.equal(liarRevealFinished(round, 1000 + LIAR_REVEAL_DURATION), true);
+});
+
+test('vote totals show before the liar identity and the animation resumes from its timestamp', () => {
+  const round = { contestants, tally: { ...liarTally({ contestants, votes: { A2: { participantId: 'A1' } } }), closedAt: 100 } };
+  const game = { control: { phase: 'closed', questionIndex: 0 }, rounds: { 0: round } };
+  const slide = { view: 'play', questionIndex: 0 };
+  const pending = liarPresentation(game, slide, 1000);
+  assert.ok(pending.includes('liar-vote-count'));
+  assert.ok(!pending.includes('liar-badge'));
+  assert.ok(!pending.includes('is-liar'));
+  round.result = { ...liarOutcome({ ...round, votes: { A2: { participantId: 'A1' } } }, 'A1'), revealedAt: 1000 };
+  const revealed = liarPresentation(game, slide, 1500);
+  assert.ok(revealed.includes('liar-badge'));
+  assert.ok(revealed.includes('--liar-reveal-delay:-500ms'));
+});
+
 test('liar keeps prior entrants ineligible and requires three members per team', () => {
   assert.deepEqual([...liarUsedIds({ rounds: { 0: { contestants } } })], ['A1', 'B1', 'C1', 'D1']);
   const roster = Object.fromEntries(TEAM_IDS.flatMap(team => Array.from({ length: 3 }, (_, i) => [`${team}${i + 1}`, { team }])));
@@ -48,4 +73,44 @@ test('presenter and spectators never receive the private word in rendered markup
   assert.ok(!liarParticipant({ ...common, participantId: 'A2', round: { contestants } }).includes('막걸리'));
   assert.ok(liarParticipant({ ...common, participantId: 'A1', round: { contestants, card: { word: '막걸리' } } }).includes('막걸리'));
   assert.ok(!liarParticipant({ ...common, participantId: 'A1', round: { contestants, card: { word: '' } } }).includes('막걸리'));
+});
+
+function revealTransition({ scored = false, now = 1000 } = {}) {
+  const slideIndex = STAGES.findIndex(stage => stage.id === 'liar-play-1');
+  const round = { roundId: 'round', result: { revealedAt: 1000 } };
+  const state = { role: 'host', room: 'local', presenting: true, online: true, busy: false, slideIndex, serverOffset: 0,
+    presentation: { resetAt: 1 }, liarGame: { control: { resetAt: 1 }, rounds: { 0: round } }, teamScores: scored ? { awards: { round: {} } } : null };
+  const calls = [], timers = [], errors = [];
+  const context = vm.createContext({
+    state, STAGES, stageIndex, LIAR_REVEAL_DURATION, Date: { now: () => now },
+    clearTimeout() {}, setTimeout(callback, delay) { timers.push({ callback, delay }); return timers.length; }, schedule() {},
+    syncPresentation(value) { state.slideIndex = value.slideIndex; }, showGameError(error) { errors.push(error); },
+    api: {
+      async awardLiarPoints() { calls.push('award'); return { awards: { round: {} } }; },
+      async followPresentationSlide(room, expected, next) { calls.push('follow'); return { committed: true, snapshot: { val: () => ({ slideIndex: next }) } }; },
+    },
+  });
+  const source = readFileSync(new URL('../src/event-app.js', import.meta.url), 'utf8');
+  vm.runInContext('let liarTimer, liarAdvancing = false, liarPendingId, liarRetryAt = 0;\n'
+    + source.slice(source.indexOf('function scheduleLiarProgress()'), source.indexOf('function editableZoomQuestions()')), context);
+  context.scheduleLiarProgress();
+  return { state, context, timers, calls, errors, setNow(value) { now = value; } };
+}
+
+test('liar points and score navigation wait for the animation and resume after reloading', async () => {
+  const transition = revealTransition({ now: 1500 });
+  assert.equal(transition.timers[0].delay, 1500);
+  assert.deepEqual(transition.calls, []);
+  transition.setNow(3000);
+  await transition.timers[0].callback();
+  assert.deepEqual(transition.calls, ['award', 'follow']);
+  assert.equal(STAGES[transition.state.slideIndex].id, 'liar-score-1');
+  assert.equal(revealTransition({ scored: true }).timers.length, 0);
+});
+
+test('reset cancels a pending liar reveal transition', async () => {
+  const transition = revealTransition();
+  transition.state.presentation.resetAt = 2;
+  await transition.timers[0].callback();
+  assert.deepEqual(transition.calls, []);
 });

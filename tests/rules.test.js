@@ -80,7 +80,12 @@ test('liar words stay personal and contestants cannot join the audience vote', a
   await assertSucceeds(vote('A2'));
   await assertFails(vote('A2', 'B1'));
   await assertFails(get(location(db('B2'), 'liarGame/rounds/0/votes/A2')));
-  await update(location(db('host'), 'liarGame/control'), { phase: 'finished', updatedAt: serverTimestamp() });
+  await update(location(db('host'), 'liarGame/control'), { phase: 'closed', updatedAt: serverTimestamp() });
+  await assertSucceeds(set(location(db('host'), 'liarGame/rounds/0/tally'), { counts: { A1: 1, B1: 0, C1: 0, D1: 0 }, topIds: { A1: true }, closedAt: serverTimestamp() }));
+  await assertSucceeds(get(location(db('A2'), 'liarGame/rounds/0/tally')));
+  assert.equal((await get(location(db('A2'), 'liarGame/rounds/0/result'))).exists(), false);
+  await assertFails(get(location(db('A2'), 'liarGame/rounds/0/secret')));
+  await assertFails(update(location(db('A2'), 'liarGame/rounds/0/tally'), { liarId: 'A1' }));
   await assertFails(vote('B2'));
   const oldGame = (await get(location(db('host'), 'liarGame'))).val();
   await update(location(db('host')), { presentation: { active: true, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() }, liarGame: null });

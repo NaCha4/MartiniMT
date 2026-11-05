@@ -84,6 +84,33 @@ test('three liar rounds confirm unique entrants, deliver private words, exclude 
       if (index === 2) await spectators[1].locator(`[data-liar-vote="${['A', 'B', 'C', 'D'][(liar + 1) % 4]}3"]`).click();
       await expect(spectators[0].getByRole('heading', { name: '투표 완료', exact: true })).toBeVisible();
       await remote.getByRole('button', { name: '투표 종료', exact: true }).click();
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(40 + index * 3));
+      await expect(host.locator('.liar-vote-results')).toBeVisible();
+      await expect(host.locator('.liar-vote-count')).toHaveCount(4);
+      await expect(host.locator('.liar-badge')).toHaveCount(0);
+      await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+      const beforeReveal = await host.evaluate(async index => {
+        const api = await import('/src/event-data.js'); await api.connect();
+        const room = localStorage.getItem('martini.host-room');
+        return { result: await api.read(room, `liarGame/rounds/${index}/result`), scores: await api.read(room, 'teamScores') };
+      }, index);
+      expect(beforeReveal.result).toBeNull();
+      expect(beforeReveal.scores?.totals ?? { A: 0, B: 0, C: 0, D: 0 }).toEqual(totals);
+      if (index === 0) {
+        await host.reload();
+        await expect(host.locator('.liar-vote-results')).toBeVisible();
+        await expect(host.locator('.liar-badge')).toHaveCount(0);
+        await host.screenshot({ path: '.cache/screenshots/liar-vote-results.png' });
+      }
+      await remote.getByRole('button', { name: '정답 공개', exact: true }).click();
+      await expect(host.locator(`[data-liar-candidate="${liarId}"]`)).toHaveClass(/is-liar/);
+      await expect(host.locator('.liar-badge')).toHaveText('라이어');
+      await expect(host.locator('.is-liar')).toHaveCSS('animation-name', 'liar-card-reveal');
+      const immediatelyAfter = await host.evaluate(async () => {
+        const api = await import('/src/event-data.js'); await api.connect();
+        return api.read(localStorage.getItem('martini.host-room'), 'teamScores');
+      });
+      expect(immediatelyAfter?.totals ?? { A: 0, B: 0, C: 0, D: 0 }).toEqual(totals);
       await expect(host.locator('.presentation-screen-code')).toHaveText(String(41 + index * 3));
       await expect(host.locator('.liar-result h1')).toHaveText(index === 1 ? '라이어 생존' : '라이어 적발 성공');
       for (const team of ['A', 'B', 'C', 'D']) {

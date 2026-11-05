@@ -190,7 +190,7 @@ const liarGameRules = {
     '.read': gameReader, '.validate': "newData.hasChildren(['roundId','questionIndex','phase','updatedAt'])",
     roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' },
     questionIndex: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() < 3 && newData.val() % 1 === 0' },
-    phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'describing' || newData.val() === 'voting' || newData.val() === 'finished'" },
+    phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'describing' || newData.val() === 'voting' || newData.val() === 'closed' || newData.val() === 'finished'" },
     updatedAt: storedTimestamp, '$other': denyExtra,
   },
   prompts: {
@@ -219,6 +219,12 @@ const liarGameRules = {
           '.validate': `newData.hasChildren(['participantId','roundId','submittedAt']) && (${liarIsContestant("newData.child('participantId').val()")}) && newData.child('roundId').val() === newData.parent().parent().child('roundId').val()`,
           participantId: text(2), roundId: text(20), submittedAt: storedTimestamp, '$other': denyExtra,
         },
+      },
+      tally: {
+        '.read': gameReader, '.validate': "newData.hasChildren(['counts','closedAt'])",
+        counts: { '$participant': { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 24 && newData.val() % 1 === 0' } },
+        topIds: { '$participant': { '.validate': 'newData.val() === true' } },
+        closedAt: storedTimestamp, '$other': denyExtra,
       },
       result: {
         '.read': gameReader, '.validate': "newData.hasChildren(['liarId','caught','counts','points','revealedAt'])",

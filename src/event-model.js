@@ -44,7 +44,7 @@ export const STAGES = [
   { id: 'liar-intro', screenCode: 38, game: 'liar', view: 'intro', title: '라이어게임', script: '각 조에서 한 명씩 출전합니다. 매 라운드 새로운 팀원이 출전하며 총 세 번 진행합니다. 네 명 중 한 명은 단어를 받지 못한 라이어입니다. 차례대로 단어를 묘사한 뒤, 출전자를 제외한 모두가 라이어에게 투표합니다. 라이어가 공동 1위를 포함해 가장 많은 표를 받으면 나머지 세 팀에 각각 50점, 아니라면 라이어 팀에 150점입니다.' },
   ...Array.from({ length: 3 }, (_, questionIndex) => [
     { id: `liar-select-${questionIndex + 1}`, screenCode: 39 + questionIndex * 3, game: 'liar', view: 'select', questionIndex, title: `라이어 ${questionIndex + 1}라운드 출전자`, script: '각 조에서 이번에 출전할 한 명이 휴대폰을 누른 뒤 예를 선택해주세요. 이미 출전한 사람은 다시 출전할 수 없습니다.' },
-    { id: `liar-play-${questionIndex + 1}`, screenCode: 40 + questionIndex * 3, game: 'liar', view: 'play', questionIndex, title: `라이어 ${questionIndex + 1}라운드`, script: '단어 전달을 누르면 한 명이 무작위 라이어가 됩니다. 출전자들은 휴대폰을 확인해주세요. 진행자가 한 명씩 차례로 묘사를 시킨 뒤 투표를 시작합니다. 출전자 네 명은 투표에 참여하지 않습니다.' },
+    { id: `liar-play-${questionIndex + 1}`, screenCode: 40 + questionIndex * 3, game: 'liar', view: 'play', questionIndex, title: `라이어 ${questionIndex + 1}라운드`, script: '단어 전달을 누르면 한 명이 무작위 라이어가 됩니다. 출전자들은 휴대폰을 확인해주세요. 진행자가 한 명씩 차례로 묘사를 시킨 뒤 투표를 시작합니다. 출전자 네 명은 투표에 참여하지 않습니다. 투표 종료 후 득표를 확인하고 정답 공개를 눌러주세요. 라이어 공개가 끝나면 점수로 이동합니다.' },
     { id: `liar-score-${questionIndex + 1}`, screenCode: 41 + questionIndex * 3, game: 'liar', view: 'score', questionIndex, title: `라이어 ${questionIndex + 1}라운드 점수`, script: '라이어 적발 여부에 따른 점수를 합산하고 현재 순위를 확인하겠습니다.' },
   ]).flat(),
 ];

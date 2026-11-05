@@ -10,7 +10,7 @@ import { createSubscriptionGroup } from './subscription-group.js';
 import { ZOOM_FEEDBACK_DURATION, ZOOM_QUESTION_COUNT, ZOOM_NOTICE_DURATION } from './zoom-model.js';
 import { zoomEditor, zoomPresentation, zoomControls, zoomParticipant } from './zoom-view.js';
 import { bindZoomEditor } from './zoom-editor.js';
-import { liarRosterReady, liarUsedIds } from './liar-model.js';
+import { LIAR_REVEAL_DURATION, liarRosterReady, liarUsedIds, liarRevealFinished } from './liar-model.js';
 import { liarControls, liarPresentation, liarParticipant, liarResultCaption } from './liar-view.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
@@ -78,6 +78,7 @@ let managerSaveTimer, managerSavePromise;
 let controlsUnlockTimer, scriptPosition;
 let revealTimer, scoreFrame;
 let zoomTimer, zoomAdvancing = false, zoomRetryAt = 0;
+let liarTimer, liarAdvancing = false, liarPendingId, liarRetryAt = 0;
 let zoomEditing = false;
 window.addEventListener('blur', () => { zoomEditing = false; schedule(); });
 let gameWatchKey;
@@ -230,7 +231,7 @@ function nextBlocked() {
     const round = game.rounds?.[slide.questionIndex];
     if (slide.view === 'intro') return !liarRosterReady(game.roster ?? state.participants);
     if (slide.view === 'select') return TEAM_IDS.some(team => !round?.contestants?.[team]);
-    if (slide.view === 'play') return !round?.result;
+    if (slide.view === 'play') return !liarRevealFinished(round, Date.now() + state.serverOffset);
     return stageIndex(state.slideIndex, 1) === state.slideIndex;
   }
   if (slide.game === 'zoom') {
@@ -463,7 +464,7 @@ function presentationView() {
   if (slide.id === 'join') {
     content = joinNetworkView();
   } else if (state.slideIndex >= 2) {
-    if (slide.game === 'liar') content = slide.view === 'score' ? scorePresentation(state.liarGame.rounds?.[slide.questionIndex]?.roundId, liarResultCaption(state.liarGame, slide.questionIndex)) : liarPresentation(state.liarGame, slide);
+    if (slide.game === 'liar') content = slide.view === 'score' ? scorePresentation(state.liarGame.rounds?.[slide.questionIndex]?.roundId, liarResultCaption(state.liarGame, slide.questionIndex)) : liarPresentation(state.liarGame, slide, Date.now() + state.serverOffset);
     else if (slide.game === 'zoom') content = slide.view === 'score' ? scorePresentation(state.zoomGame.control?.roundId) : zoomPresentation(state.zoomGame, state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, slide, Date.now() + state.serverOffset);
     else content = slide.game === 'ox' ? oxPresentation(slide) : tastePresentation(slide);
   } else {
@@ -575,6 +576,7 @@ function render() {
   }
   animateScoreNumbers();
   scheduleZoomProgress();
+  scheduleLiarProgress();
 }
 
 function animateScoreNumbers() {
@@ -628,7 +630,7 @@ async function moveTo(index, { skipGame = false } = {}) {
     const { key, slide } = tasteContext(index);
     if (key === 'liar') {
       if (slide.view === 'select') state.liarGame = await api.prepareLiarRound(state.room, state.participants, slide.questionIndex, resetAt);
-      if (slide.view === 'score') state.teamScores = await api.awardLiarPoints(state.room, slide.questionIndex);
+      if (slide.view === 'score') state.teamScores = await api.awardLiarPoints(state.room, slide.questionIndex, Date.now() + state.serverOffset);
     } else if (key === 'zoom') {
       if (slide.view === 'question') state.zoomGame = await api.prepareZoomQuestion(state.room, state.participants, state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, slide.questionIndex, resetAt);
       if (slide.view === 'score') state.teamScores = await api.awardZoomPoints(state.room);
@@ -773,6 +775,36 @@ function scheduleZoomProgress() {
   }, Math.max(10, wait, zoomRetryAt - Date.now()));
 }
 
+function scheduleLiarProgress() {
+  clearTimeout(liarTimer);
+  if (liarAdvancing) return;
+  const slide = STAGES[state.slideIndex], game = state.liarGame;
+  const round = game.rounds?.[slide?.questionIndex];
+  if (state.role === 'participant' || !state.presenting || slide?.game !== 'liar' || slide.view !== 'play' || !round?.result) {
+    liarPendingId = null;
+    return;
+  }
+  if (!state.online || state.busy || (state.teamScores?.awards?.[round.roundId] && liarPendingId !== round.roundId)) return;
+  const expectedIndex = state.slideIndex, resetAt = game.control.resetAt ?? null;
+  const stillCurrent = () => state.slideIndex === expectedIndex && (state.presentation?.resetAt ?? null) === resetAt && state.liarGame.rounds?.[slide.questionIndex]?.roundId === round.roundId;
+  liarTimer = setTimeout(async () => {
+    if (!stillCurrent()) return;
+    liarAdvancing = true; liarPendingId = round.roundId;
+    state.busy = true; schedule();
+    try {
+      const scores = await api.awardLiarPoints(state.room, slide.questionIndex, Date.now() + state.serverOffset);
+      if (!stillCurrent()) return;
+      state.teamScores = scores;
+      const result = await api.followPresentationSlide(state.room, expectedIndex, stageIndex(expectedIndex, 1), resetAt);
+      if (result.committed) syncPresentation(result.snapshot.val());
+      liarPendingId = null; liarRetryAt = 0;
+    } catch (error) {
+      liarRetryAt = Date.now() + 1500;
+      if (stillCurrent()) showGameError(error);
+    } finally { liarAdvancing = false; state.busy = false; schedule(); }
+  }, Math.max(10, round.result.revealedAt + LIAR_REVEAL_DURATION - Date.now() - state.serverOffset, liarRetryAt - Date.now()));
+}
+
 function editableZoomQuestions() {
   state.zoomDraft ??= Object.fromEntries(Object.entries(state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS).map(([index, question]) => [index, { ...question }]));
   return state.zoomDraft;
@@ -871,13 +903,12 @@ async function action(name, errorId) {
       await api.claimLiarEntry(state.room, state.participantId, slide.questionIndex, game.control.roundId);
       state.liarConfirm = false;
     }
-    if (['liar-deal', 'liar-vote', 'liar-finish'].includes(name)) {
+    if (['liar-deal', 'liar-vote', 'liar-finish', 'liar-reveal'].includes(name)) {
       const slide = STAGES[state.slideIndex];
-      const nextIndex = stageIndex(state.slideIndex, 1), resetAt = state.presentation?.resetAt;
+      const resetAt = state.presentation?.resetAt;
       const game = await api.changeLiarPhase(state.room, slide.questionIndex, state.liarGame.control?.roundId, name);
       if (state.presentation?.resetAt !== resetAt) return;
       state.liarGame = game;
-      if (name === 'liar-finish') await moveTo(nextIndex);
     }
     if (['ox-start', 'ox-close', 'ox-reveal'].includes(name)) {
       const slide = STAGES[state.slideIndex];

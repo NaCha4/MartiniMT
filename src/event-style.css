@@ -743,6 +743,25 @@ dialog textarea { resize: vertical; }
 .liar-result > span { color: var(--color-accent); font-size: 16px; letter-spacing: .15em; }
 .liar-result h1 { margin: 1vh 0; font-size: clamp(28px, 3vw, 52px); }
 .liar-result p { margin: 0; color: var(--color-text-secondary); font-size: clamp(20px, 2vw, 36px); }
+.liar-vote-results .liar-contestant { position: relative; justify-content: center; gap: 2vh; }
+.liar-vote-bar { height: 7px; background: rgb(255 255 255 / 10%); margin-top: 1vh; }
+.liar-vote-bar i { display: block; height: 100%; background: var(--signal-color); }
+.liar-vote-count { color: var(--signal-color); font-size: clamp(36px, 5vw, 80px); line-height: 1; }
+.liar-vote-count small { margin-left: 10px; font-size: .35em; }
+.liar-badge { position: absolute; top: 16px; right: 16px; background: var(--signal-color); color: #111; padding: 10px 18px; font-size: clamp(18px, 2vw, 32px); animation: liar-badge-reveal 1400ms ease both; animation-delay: var(--liar-reveal-delay); }
+.liar-vote-results .is-liar { animation: liar-card-reveal 1600ms cubic-bezier(.22, 1, .36, 1) both; animation-delay: var(--liar-reveal-delay); }
+.liar-vote-results .is-other { animation: liar-card-dim 1000ms ease both; animation-delay: var(--liar-reveal-delay); }
+@keyframes liar-card-reveal {
+  0% { transform: translateY(0); box-shadow: none; }
+  45% { transform: translateY(-12px); box-shadow: 0 0 50px color-mix(in srgb, var(--signal-color), transparent 55%); }
+  100% { transform: translateY(0); box-shadow: 0 0 24px color-mix(in srgb, var(--signal-color), transparent 65%); }
+}
+@keyframes liar-card-dim { from { opacity: 1; filter: none; } to { opacity: .3; filter: saturate(.25); } }
+@keyframes liar-badge-reveal { 0%, 25% { opacity: 0; transform: translateY(-18px); } 100% { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .liar-badge, .liar-vote-results .is-liar { animation: none; }
+  .liar-vote-results .is-other { animation: none; opacity: .3; }
+}
 .ox-editor { margin-top: 24px; padding: 24px; border: 1px solid var(--color-highlight-border); background: var(--color-panel); }
 .ox-editor h2 { margin: 0 0 12px; }
 .ox-editor > p, .ox-editor > span { color: var(--color-text-secondary); font-size: 14px; line-height: 1.6; }
