@@ -119,6 +119,59 @@ const oxGameRules = {
   },
   '$other': denyExtra,
 };
+const zoom = `${s}.child('zoomGame')`;
+const zoomScreens = STAGES.map((stage, index) => stage.game === 'zoom' && stage.view === 'question'
+  ? `($question === '${stage.questionIndex}' && ${s}.child('presentation/slideIndex').val() === ${index})` : null).filter(Boolean).join(' || ');
+const zoomQuestions = {
+  '.validate': "newData.hasChildren(['0','1','2','3','4'])",
+  '$question': {
+    '.validate': "$question.matches(/^[0-4]$/) && newData.hasChildren(['image','answer','focusX','focusY'])",
+    image: { '.validate': "newData.isString() && newData.val().length > 0 && newData.val().length <= 1500000 && newData.val().matches(/^(data:image\\/(jpeg|png|webp);base64,|https:\\/\\/|\\/).*/)" },
+    answer: { '.validate': 'newData.isString() && newData.val().length <= 100' },
+    focusX: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 100' },
+    focusY: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 100' },
+    '$other': denyExtra,
+  },
+};
+const zoomGameRules = {
+  '.read': controller, '.write': controller,
+  '.validate': `newData.hasChildren(['control','questions','roster','rounds']) && newData.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+  control: {
+    '.read': gameReader,
+    '.validate': "newData.hasChildren(['roundId','questionIndex','zoomStep','phase','attemptId','updatedAt'])",
+    roundId: text(20), attemptId: text(20), resetAt: { '.validate': 'newData.isNumber()' },
+    questionIndex: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() < 5 && newData.val() % 1 === 0' },
+    zoomStep: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 3 && newData.val() % 1 === 0' },
+    phase: { '.validate': "newData.val() === 'open' || newData.val() === 'correct' || newData.val() === 'wrong' || newData.val() === 'skipped' || newData.val() === 'complete'" },
+    updatedAt: storedTimestamp, '$other': denyExtra,
+  },
+  questions: zoomQuestions,
+  roster: tasteGameRules('zoomGame', 0).roster,
+  rounds: {
+    '$question': {
+      '.validate': "$question.matches(/^[0-4]$/) && newData.hasChild('openedAt')",
+      openedAt: storedTimestamp,
+      blocked: { '$participant': { '.read': self, '.validate': `newData.val() === true && ${zoom}.child('roster').child($participant).exists()` } },
+      request: {
+        '.read': gameReader,
+        '.write': `${member} && !data.exists() && newData.exists() && newData.child('participantId').val() === ${pid} && ${zoom}.child('roster').child(${pid}).exists() && ${s}.child('presentation/active').val() === true && (${zoomScreens}) && ${zoom}.child('control/questionIndex').val() + '' === $question && ${zoom}.child('control/phase').val() === 'open' && !${zoom}.child('rounds').child($question).child('blocked').child(${pid}).exists() && newData.child('roundId').val() === ${zoom}.child('control/roundId').val() && newData.child('attemptId').val() === ${zoom}.child('control/attemptId').val() && ${zoom}.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+        '.validate': "newData.hasChildren(['id','participantId','roundId','attemptId','submittedAt'])",
+        id: text(20), participantId: { '.validate': `newData.isString() && ${zoom}.child('roster').child(newData.val()).exists()` },
+        roundId: text(20), attemptId: text(20), submittedAt: storedTimestamp, '$other': denyExtra,
+      },
+      verdict: {
+        '.read': gameReader,
+        '.validate': "newData.hasChildren(['requestId','correct','judgedAt']) && (newData.child('skipped').val() === true || newData.hasChild('participantId'))",
+        requestId: text(20), correct: { '.validate': 'newData.isBoolean()' },
+        participantId: { '.validate': `newData.isString() && ${zoom}.child('roster').child(newData.val()).exists()` },
+        skipped: { '.validate': 'newData.val() === true && newData.parent().child(\'correct\').val() === false' },
+        judgedAt: storedTimestamp, '$other': denyExtra,
+      },
+      '$other': denyExtra,
+    },
+  },
+  '$other': denyExtra,
+};
 const session = {
   '.read': owner,
   '.write': "auth != null && !data.exists() && newData.child('meta/ownerUid').val() === auth.uid && $session.matches(/^[A-Za-z0-9_-]{20}$/)",
@@ -237,6 +290,8 @@ const session = {
   militaryGame: tasteGameRules('militaryGame', 9),
   oxQuestions: { '.read': controller, '.write': controller, ...oxQuestions },
   oxGame: oxGameRules,
+  zoomQuestions: { '.read': controller, '.write': controller, ...zoomQuestions },
+  zoomGame: zoomGameRules,
   teamScores: {
     '.read': gameReader, '.write': controller, '.validate': `newData.hasChildren(['totals','awards']) && newData.child('resetAt').val() === ${s}.child('presentation/resetAt').val()`,
     resetAt: { '.validate': 'newData.isNumber()' },

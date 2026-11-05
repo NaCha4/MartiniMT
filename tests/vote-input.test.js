@@ -11,7 +11,7 @@ function votingScreen(kind = 'taste') {
   let renders = 0, framePending = false, time = 1000;
   class Button {
     constructor() {
-      this.dataset = kind === 'ox' ? { oxVote: 'O' } : { vote: 'peat' };
+      this.dataset = kind === 'zoom' ? { zoomRequest: '' } : kind === 'ox' ? { oxVote: 'O' } : { vote: 'peat' };
       this.disabled = false;
       this.isConnected = true;
       this.listeners = new Map();
@@ -64,7 +64,7 @@ function votingScreen(kind = 'taste') {
   };
 }
 
-for (const kind of ['taste', 'ox']) {
+for (const kind of ['taste', 'ox', 'zoom']) {
   test(`${kind} accepts one slightly moving tap despite a queued realtime redraw and a missing click`, () => {
     const screen = votingScreen(kind);
     screen.pointer('pointerdown');
@@ -74,7 +74,7 @@ for (const kind of ['taste', 'ox']) {
     screen.pointer('pointermove', { clientX: 52, clientY: 51 });
     assert.equal(screen.votes.length, 0, 'Wait for a completed tap');
     screen.pointer('pointerup', { clientX: 52, clientY: 51 });
-    assert.deepEqual(screen.votes, [[kind, kind === 'ox' ? 'O' : 'peat']]);
+    assert.deepEqual(screen.votes, [[kind, kind === 'zoom' ? null : kind === 'ox' ? 'O' : 'peat']]);
     screen.flush();
     assert.equal(screen.renders, 1);
     screen.click(1);

@@ -39,6 +39,76 @@ async function createOxGame() {
 }
 const oxVote = (uid, id, index = 0, answer = 'O', roundId = 'o'.repeat(20)) => set(location(db(uid), `oxGame/rounds/${index}/votes/${id}`), { answer, roundId, submittedAt: serverTimestamp() });
 
+const zoomQuestions = Object.fromEntries(Array.from({ length: 5 }, (_, index) => [index, { image: `/photos/${index}.jpg`, answer: `사진 ${index}`, focusX: 50, focusY: 50 }]));
+async function createZoomGame() {
+  await create(); await claim('alice', 'A1'); await claim('bob', 'A2');
+  await set(location(db('host'), 'zoomQuestions'), zoomQuestions);
+  await set(location(db('host'), 'zoomGame'), {
+    control: { roundId: 'z'.repeat(20), attemptId: 'a'.repeat(20), questionIndex: 0, zoomStep: 0, phase: 'open', updatedAt: serverTimestamp() },
+    questions: zoomQuestions, roster: roster.participants, rounds: { 0: { openedAt: serverTimestamp() } },
+  });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'zoom-question-1'), updatedAt: serverTimestamp() });
+}
+const requestZoom = (uid, participantId, attemptId = 'a'.repeat(20), index = 0) => set(location(db(uid), `zoomGame/rounds/${index}/request`), {
+  id: 'r'.repeat(20), participantId, roundId: 'z'.repeat(20), attemptId, submittedAt: serverTimestamp(),
+});
+
+test('zoom accepts exactly one first request and keeps photos, answers and other blocked lists private', async () => {
+  await createZoomGame();
+  await assertSucceeds(get(location(db('alice'), 'zoomGame/control')));
+  await assertFails(get(location(db('alice'), 'zoomGame')));
+  await assertFails(get(location(db('alice'), 'zoomGame/questions')));
+  await assertFails(get(location(db('alice'), 'zoomQuestions')));
+  await assertFails(get(location(db('alice'), 'zoomGame/rounds/0/blocked/A2')));
+  await assertFails(requestZoom('visitor', 'A1'));
+  await assertFails(requestZoom('alice', 'A2'));
+  const results = await Promise.allSettled([requestZoom('alice', 'A1'), requestZoom('bob', 'A2')]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  await assertSucceeds(get(location(db('alice'), 'zoomGame/rounds/0/request')));
+  await assertFails(requestZoom('alice', 'A1'));
+  await assertFails(remove(location(db('alice'), 'zoomGame/rounds/0/request')));
+});
+
+test('zoom wrong answers block only that participant and reject requests from older attempts', async () => {
+  await createZoomGame(); await requestZoom('alice', 'A1');
+  await update(location(db('host'), 'zoomGame'), {
+    'control/phase': 'wrong', 'control/updatedAt': serverTimestamp(), 'rounds/0/blocked/A1': true,
+    'rounds/0/verdict': { requestId: 'r'.repeat(20), participantId: 'A1', correct: false, judgedAt: serverTimestamp() },
+  });
+  await assertFails(requestZoom('bob', 'A2'));
+  await update(location(db('host'), 'zoomGame'), {
+    'control/phase': 'open', 'control/attemptId': 'b'.repeat(20), 'control/updatedAt': serverTimestamp(),
+    'rounds/0/request': null, 'rounds/0/verdict': null,
+  });
+  await assertFails(requestZoom('alice', 'A1', 'b'.repeat(20)));
+  await assertFails(requestZoom('bob', 'A2'));
+  await assertSucceeds(requestZoom('bob', 'A2', 'b'.repeat(20)));
+});
+
+test('only zoom controllers adjust zoom and judge, and requests require the current displayed photo', async () => {
+  await createZoomGame(); await configureManager(); await claimManager('manager');
+  await assertFails(update(location(db('alice'), 'zoomGame/control'), { zoomStep: 2 }));
+  await assertFails(set(location(db('alice'), 'zoomGame/rounds/0/verdict'), { requestId: 'r'.repeat(20), participantId: 'A1', correct: true, judgedAt: serverTimestamp() }));
+  await assertSucceeds(update(location(db('manager'), 'zoomGame/control'), { zoomStep: 1, updatedAt: serverTimestamp() }));
+  await assertSucceeds(get(location(db('manager'), 'zoomQuestions')));
+  await assertFails(requestZoom('alice', 'A1', 'a'.repeat(20), 1));
+  await update(location(db('host'), 'presentation'), { slideIndex: STAGES.findIndex(stage => stage.id === 'zoom-intro'), updatedAt: serverTimestamp() });
+  await assertFails(requestZoom('alice', 'A1'));
+});
+
+test('zoom configuration validates images and reset prevents stale game resurrection', async () => {
+  await createZoomGame();
+  await assertFails(set(location(db('host'), 'zoomQuestions/0/image'), 'javascript:alert(1)'));
+  await assertFails(set(location(db('host'), 'zoomQuestions/0/focusX'), 101));
+  await assertFails(set(location(db('alice'), 'zoomQuestions'), zoomQuestions));
+  const oldGame = (await get(location(db('host'), 'zoomGame'))).val();
+  await update(location(db('host')), {
+    zoomGame: null, presentation: { active: true, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() },
+  });
+  await assertFails(set(location(db('host'), 'zoomGame'), oldGame));
+  await assertFails(requestZoom('alice', 'A1'));
+});
+
 test('OX questions and other ballots stay private while each eligible member answers once', async () => {
   await createOxGame(); await configureManager(); await claimManager('manager');
   await assertSucceeds(get(location(db('manager'), 'oxQuestions')));

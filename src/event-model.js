@@ -4,6 +4,7 @@ export const TEAM_NAMES = { A: '1조', B: '2조', C: '3조', D: '4조' };
 export const MAX_MESSAGE = 1000;
 export const TOUCH_TITLE = '터치하세요!';
 export const TOUCH_BODY = '선착순 터치';
+export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 // Keep these development screen codes stable and use the next unused code for new screens.
 export const STAGES = [
   {
@@ -34,6 +35,12 @@ export const STAGES = [
     id: `ox-survivors-${questionIndex + 1}`, screenCode: 26 + questionIndex, game: 'ox', view: 'survivors', questionIndex,
     title: `OX ${questionIndex + 1}번 생존자`, script: '이번 문제에 도전한 사람들의 불이 켜져 있습니다. 결과를 공개하면 이번에 탈락한 사람의 불이 꺼집니다. 살아남은 사람은 다음 문제에 도전합니다.',
   })),
+  { id: 'zoom-intro', screenCode: 31, game: 'zoom', view: 'intro', title: '사진 확대 퀴즈', script: '확대된 사진을 보고 무엇인지 맞혀주세요. 사진은 세 번에 걸쳐 전체 모습까지 공개됩니다. 정답 요청을 가장 먼저 누른 한 명에게 답변 기회가 주어집니다. 정답 한 개당 팀에 50점이 추가됩니다.' },
+  ...Array.from({ length: 5 }, (_, questionIndex) => ({
+    id: `zoom-question-${questionIndex + 1}`, screenCode: 32 + questionIndex, game: 'zoom', view: 'question', questionIndex,
+    title: `사진 ${questionIndex + 1}번`, script: '사진의 정체를 알겠다면 정답 제출 버튼을 눌러주세요. 먼저 요청한 한 명만 답변합니다. 오답이면 이 사진에는 다시 도전할 수 없으며 다음 사진부터 참여할 수 있습니다.',
+  })),
+  { id: 'zoom-score', screenCode: 37, game: 'zoom', view: 'score', title: '사진 퀴즈 최종 점수', script: '다섯 장의 사진이 모두 공개되었습니다. 정답 한 개당 50점을 팀 점수에 합산하겠습니다.' },
 ];
 // Append new stages so stored slide indices and existing screen codes stay valid.
 const presentationOrder = STAGES.flatMap((stage, index) => {

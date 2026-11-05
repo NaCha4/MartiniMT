@@ -6,6 +6,7 @@ import { firebaseConfig, appCheckSiteKey } from '../firebase-config.js';
 import { ROOT, nameKey, TOUCH_TITLE, TOUCH_BODY } from './event-model.js';
 import { TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward } from './taste-model.js';
 import { OX_QUESTION_COUNT, oxQuestionsReady, oxSurvivors, oxPoints } from './ox-model.js';
+import { ZOOM_QUESTION_COUNT, ZOOM_LEVELS, zoomQuestionsReady, zoomPoints, judgeZoomRequest, finishZoomFeedback } from './zoom-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -70,6 +71,7 @@ export function resetPresentation(room) {
     teamScores: null,
     operatorError: null,
     oxGame: null,
+    zoomGame: null,
   };
   for (const { path } of Object.values(TASTE_ROUNDS)) changes[path] = null;
   return update(locationRef(room), changes);
@@ -225,6 +227,97 @@ export function completeTouchRound(room, roundId, winnerId) {
     if (!current?.active || current.roundId !== roundId || current.winnerId) return;
     return { ...current, winnerId, updatedAt: serverTimestamp() };
   }, { applyLocally: false });
+}
+
+async function transactLoaded(location, change) {
+  let stop;
+  try {
+    await new Promise((resolve, reject) => { stop = onValue(location, resolve, reject); });
+    return await runTransaction(location, change, { applyLocally: false });
+  } finally { stop?.(); }
+}
+
+export const saveZoomQuestions = (room, questions) => set(locationRef(room, 'zoomQuestions'), questions);
+
+export async function prepareZoomQuestion(room, roster, questions, questionIndex, resetAt = null) {
+  const roundId = push(locationRef(room, 'zoomGame')).key;
+  const attemptId = push(locationRef(room, 'zoomGame')).key;
+  const result = await transactLoaded(locationRef(room, 'zoomGame'), current => {
+    if (current) return;
+    if (questionIndex !== 0 || !zoomQuestionsReady(questions)) throw { userMessage: '사진 5개를 먼저 설정해주세요.' };
+    return {
+      control: { roundId, questionIndex: 0, zoomStep: 0, phase: 'open', attemptId, resetAt, updatedAt: serverTimestamp() },
+      questions, roster, rounds: { 0: { openedAt: serverTimestamp() } },
+    };
+  });
+  const game = result.snapshot.val();
+  if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };
+  if (questionIndex > game.control.questionIndex) throw { userMessage: '현재 사진의 판정을 먼저 완료해주세요.' };
+  return game;
+}
+
+export function submitZoomRequest(room, participantId, questionIndex, roundId, attemptId) {
+  const location = locationRef(room, `zoomGame/rounds/${questionIndex}/request`);
+  return set(location, { id: push(location).key, participantId, roundId, attemptId, submittedAt: serverTimestamp() });
+}
+
+export async function changeZoom(room, roundId, questionIndex, direction) {
+  const result = await transactLoaded(locationRef(room, 'zoomGame'), current => {
+    const control = current?.control;
+    if (control?.roundId !== roundId || control.questionIndex !== questionIndex || control.phase !== 'open'
+      || current.rounds[questionIndex].request) return;
+    const zoomStep = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, control.zoomStep + direction));
+    if (zoomStep === control.zoomStep) return;
+    return { ...current, control: { ...control, zoomStep, updatedAt: serverTimestamp() } };
+  });
+  return result.snapshot.val();
+}
+
+export async function judgeZoom(room, roundId, questionIndex, requestId, correct) {
+  const result = await transactLoaded(locationRef(room, 'zoomGame'), current => {
+    if (current?.control?.roundId !== roundId || current.control.questionIndex !== questionIndex) return;
+    return judgeZoomRequest(current, requestId, correct, serverTimestamp());
+  });
+  if (!result.committed) throw { userMessage: '이미 판정되었거나 요청이 바뀌었습니다.' };
+  return result.snapshot.val();
+}
+
+export async function skipZoomQuestion(room, roundId, questionIndex) {
+  const requestId = push(locationRef(room, 'zoomGame')).key;
+  const result = await transactLoaded(locationRef(room, 'zoomGame'), current => {
+    const control = current?.control;
+    const round = current?.rounds?.[questionIndex];
+    if (control?.roundId !== roundId || control.questionIndex !== questionIndex || control.phase !== 'open' || round?.request) return;
+    return {
+      ...current, control: { ...control, phase: 'skipped', updatedAt: serverTimestamp() },
+      rounds: { ...current.rounds, [questionIndex]: { ...round, verdict: { requestId, correct: false, skipped: true, judgedAt: serverTimestamp() } } },
+    };
+  });
+  return result.snapshot.val();
+}
+
+export async function finishZoomRound(room, roundId, questionIndex, requestId, now) {
+  const attemptId = push(locationRef(room, 'zoomGame')).key;
+  const result = await transactLoaded(locationRef(room, 'zoomGame'), current =>
+    finishZoomFeedback(current, roundId, questionIndex, requestId, now, attemptId, serverTimestamp()));
+  return result.snapshot.val();
+}
+
+export function followZoomSlide(room, expectedIndex, nextIndex, resetAt) {
+  return transactLoaded(locationRef(room, 'presentation'), current => {
+    if (!current?.active || current.slideIndex !== expectedIndex || (current.resetAt ?? null) !== resetAt) return;
+    return { ...current, slideIndex: nextIndex, updatedAt: serverTimestamp() };
+  });
+}
+
+export async function awardZoomPoints(room) {
+  const game = await read(room, 'zoomGame');
+  if (game?.control?.phase !== 'complete' || game.control.questionIndex !== ZOOM_QUESTION_COUNT - 1) throw { userMessage: '사진 5개의 판정을 먼저 완료해주세요.' };
+  const result = await transactLoaded(locationRef(room, 'teamScores'), current => {
+    if (current?.awards?.[game.control.roundId]) return;
+    return { ...scoreAward(current, game.control.roundId, zoomPoints(game), serverTimestamp()), resetAt: game.control.resetAt ?? null };
+  });
+  return result.snapshot.val();
 }
 export async function claimParticipant(room, id, uid) {
   await update(locationRef(room), { [`bindings/${id}`]: { uid, claimedAt: serverTimestamp() }, [`devices/${uid}`]: { participantId: id } });

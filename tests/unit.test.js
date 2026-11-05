@@ -3,6 +3,7 @@ import './vote-input.test.js';
 import './subscription-group.test.js';
 import './app-lifecycle.test.js';
 import './navigation.test.js';
+import './zoom.test.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { rosterFromInputs, rowsFromParticipants, readRosterDraft, TEAM_NAMES, STAGES, nameKey, messageText, onlineParticipants, participantUrl, friendlyError, firstTouch, touchRoundIsActive, touchRoundResult, stageIndex, TOUCH_TITLE, TOUCH_BODY } from '../src/event-model.js';
@@ -24,7 +25,7 @@ test('OX reveals answers on question screens and keeps legacy stage indices comp
   const order = [];
   for (let index = 12; ; index = stageIndex(index, 1)) {
     order.push(STAGES[index].view);
-    if (stageIndex(index, 1) === index) break;
+    if (STAGES[index].id === 'ox-score') break;
   }
   assert.deepEqual(order, ['intro', ...Array.from({ length: 5 }, () => ['question', 'survivors']).flat(), 'score']);
   assert.equal(STAGES[23].id, 'ox-score');
@@ -118,7 +119,7 @@ test('a race accepts only the current round and chooses the earliest server time
   assert.equal(touchRoundIsActive(instruction, { step: 'join', updatedAt: 101 }), false);
   assert.equal(touchRoundIsActive(instruction, { step: 'closed', updatedAt: 100 }), false);
   assert.equal(stageIndex(0, -1), 0);
-  const last = STAGES.findIndex(stage => stage.id === 'ox-score');
+  const last = STAGES.findIndex(stage => stage.id === 'zoom-score');
   assert.equal(stageIndex(last, 1), last);
 });
 

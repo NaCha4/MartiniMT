@@ -2,11 +2,13 @@ import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 import './event-style.css';
 import QRCode from 'qrcode';
 import * as api from './event-data.js';
-import { TEAM_IDS, TEAM_NAMES, STAGES, stageIndex, touchRoundIsActive, touchRoundResult, firstTouch, rosterFromInputs, rowsFromParticipants, readRosterDraft, onlineParticipants, participantUrl, friendlyError } from './event-model.js';
+import { TEAM_IDS, TEAM_NAMES, STAGES, stageIndex, touchRoundIsActive, touchRoundResult, firstTouch, rosterFromInputs, rowsFromParticipants, readRosterDraft, onlineParticipants, participantUrl, friendlyError, escapeHtml as escape } from './event-model.js';
 import { TASTE_ROUNDS, REVEAL_INTERVAL, rankedTeams, revealFinished } from './taste-model.js';
 import { OX_QUESTION_COUNT, OX_REVEAL_DURATION, emptyOxQuestions, oxQuestionsReady, oxEliminatedIds, oxSurvivorRevealEnd } from './ox-model.js';
 import { createInputController } from './input-controller.js';
 import { createSubscriptionGroup } from './subscription-group.js';
+import { ZOOM_FEEDBACK_DURATION, ZOOM_QUESTION_COUNT } from './zoom-model.js';
+import { zoomEditor, zoomPresentation, zoomControls, zoomParticipant } from './zoom-view.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
@@ -34,9 +36,12 @@ const MILITARY_VISUALS = {
   airforce: { image: airforceImage, alt: '공군 캐릭터' },
   marines: { image: marinesImage, alt: '해병대 캐릭터' },
 };
+const DEFAULT_ZOOM_QUESTIONS = Object.fromEntries([
+  [peatImage, '피트 위스키'], [sherryImage, '셰리 위스키'], [bourbonImage, '버번 위스키'],
+  [chamisulImage, '참이슬'], [jinroImage, '진로'],
+].map(([image, answer], index) => [index, { image, answer, focusX: 50, focusY: 50 }]));
 
 const $ = selector => document.querySelector(selector);
-const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const local = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, value) { try { localStorage.setItem(key, value); return true; } catch { return false; } },
@@ -61,12 +66,14 @@ const state = {
   tasteGames: {}, tasteVotes: {}, gameError: '', teamScores: null,
   voting: false, serverOffset: 0, scoreEntryAt: 0,
   oxGame: {}, oxRound: {}, oxReady: false, oxQuestions: null, oxDraft: null,
+  zoomGame: {}, zoomRound: {}, zoomReady: false, zoomQuestions: null, zoomDraft: null,
 };
 let presenceClose, presenceEpoch = 0, frame, composing = false;
 let rosterSaveTimer, rosterSavePromise;
 let managerSaveTimer, managerSavePromise;
 let controlsUnlockTimer, scriptPosition;
 let revealTimer, scoreFrame;
+let zoomTimer, zoomAdvancing = false, zoomRetryAt = 0;
 let gameWatchKey;
 const watchRoom = (path, onValue, onError) => api.watch(state.room, path, onValue, onError);
 const participantSubscriptions = createSubscriptionGroup(watchRoom);
@@ -75,7 +82,11 @@ const gameSubscriptions = createSubscriptionGroup(watchRoom);
 const input = createInputController({
   document, window,
   getContext: () => ({ interactive: interactionLocked(), participant: state.role === 'participant', voteKey: currentVoteKey() }),
-  submitVote: (kind, value) => { if (kind === 'ox') void voteOx(value); else void voteTaste(value); },
+  submitVote: (kind, value) => {
+    if (kind === 'zoom') void requestZoomAnswer();
+    else if (kind === 'ox') void voteOx(value);
+    else void voteTaste(value);
+  },
   onChange: schedule,
 });
 
@@ -203,10 +214,14 @@ function errorBanner() {
 function tasteContext(index = state.presentation?.slideIndex ?? state.slideIndex) {
   const slide = STAGES[index];
   const key = slide?.game ?? 'whisky';
-  return { key, slide, game: key === 'ox' ? state.oxGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
+  return { key, slide, game: key === 'ox' ? state.oxGame : key === 'zoom' ? state.zoomGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
 }
 function nextBlocked() {
   const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.game === 'zoom') {
+    if (slide.view === 'question') return !game.control || (game.control.questionIndex <= slide.questionIndex && game.control.phase !== 'complete');
+    return stageIndex(state.slideIndex, 1) === state.slideIndex;
+  }
   if (slide.game === 'ox') {
     const round = game.rounds?.[slide.questionIndex];
     if (slide.view === 'intro') return !game.control && !oxQuestionsReady(state.oxQuestions);
@@ -221,6 +236,7 @@ function nextBlocked() {
 
 function tasteControls(disabled) {
   const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.game === 'zoom') return zoomControls(game, slide, disabled);
   if (slide.game === 'ox') return oxControls(slide, disabled);
   const phase = game.control?.phase;
   let control = '';
@@ -274,7 +290,7 @@ function rosterCard(team) {
 
 function hostView() {
   if (state.presenting) return presentationView();
-  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>명단 자동 저장 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${state.managerBinding ? button('관리자 휴대폰 연결 해제', 'release-manager') : ''}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div>${oxQuestionEditor()}</main>`;
+  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>명단 자동 저장 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${state.managerBinding ? button('관리자 휴대폰 연결 해제', 'release-manager') : ''}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div>${oxQuestionEditor()}${zoomEditor(state.zoomDraft ?? state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, state.busy || !state.online, Boolean(state.zoomDraft))}</main>`;
 }
 
 function managerView() {
@@ -431,7 +447,8 @@ function presentationView() {
   if (slide.id === 'join') {
     content = joinNetworkView();
   } else if (state.slideIndex >= 2) {
-    content = slide.game === 'ox' ? oxPresentation(slide) : tastePresentation(slide);
+    if (slide.game === 'zoom') content = slide.view === 'score' ? scorePresentation(state.zoomGame.control?.roundId) : zoomPresentation(state.zoomGame, state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, slide, Date.now() + state.serverOffset);
+    else content = slide.game === 'ox' ? oxPresentation(slide) : tastePresentation(slide);
   } else {
     const message = state.winner
       ? `<h2 id="winner-name">${escape(state.winner.name)}</h2><p class="winner-team">${TEAM_NAMES[state.winner.team]}</p>`
@@ -477,7 +494,11 @@ function participantView() {
   if (!enteringName && (portrait || needsFullscreen)) return `<main class="controller-gate"><h1>${needsFullscreen ? '전체화면 버튼을<br/>눌러주세요.' : '가로 화면으로 진행합니다.'}</h1><p>${needsFullscreen ? '버튼을 누르면 가로 전체화면으로 시작합니다.' : '기기를 가로로 돌려 참여해주세요.'}</p>${errorBanner()}${needsFullscreen ? `<button class="button dark" data-action="controller-start" ${state.screenStarting ? 'disabled' : ''}>${state.screenStarting ? '전환 중…' : '전체화면으로 시작'}</button>` : ''}</main>`;
   if (state.role === 'manager') return managerView();
   if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>참가자 입장</h1><p>등록된 이름을 입력하세요.</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${TEAM_NAMES[id[0]]} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
-  if (state.presentation?.active && state.presentation.slideIndex >= 2) return STAGES[state.presentation.slideIndex]?.game === 'ox' ? participantOxView() : participantTasteView();
+  if (state.presentation?.active && state.presentation.slideIndex >= 2) {
+    const slide = STAGES[state.presentation.slideIndex];
+    if (slide.game === 'zoom') return zoomParticipant({ game: state.zoomGame, round: state.zoomRound, ready: state.zoomReady, participant: state.participant, participantId: state.participantId, questionIndex: slide.questionIndex, disabled: state.voting || !state.online || state.controlsLocked, error: errorBanner() });
+    return slide.game === 'ox' ? participantOxView() : participantTasteView();
+  }
   const result = touchRoundResult(state.instruction, state.stage, state.presentation, state.participantId);
   const active = touchRoundIsActive(state.instruction, state.stage) && !result;
   const submitted = Boolean(state.instruction?.id) && (state.submittedRoundId === state.instruction.id || state.response?.instructionId === state.instruction.id);
@@ -491,6 +512,8 @@ function participantView() {
 }
 
 function render() {
+  const previousPhoto = $('.zoom-photo');
+  const previousQuestion = previousPhoto?.closest('[data-question]')?.dataset.question;
   const focused = document.activeElement, focusId = focused?.id;
   const selection = focused && 'selectionStart' in focused ? [focused.selectionStart, focused.selectionEnd] : null;
   const script = $('#manager-script');
@@ -502,6 +525,13 @@ function render() {
   document.body.classList.toggle('is-controller', state.role !== 'host' && interactionLocked());
   document.documentElement.classList.toggle('is-interacting', interactionLocked());
   $('#app').innerHTML = state.role === 'host' ? hostView() : participantView();
+  const nextPhoto = $('.zoom-photo');
+  if (previousPhoto && nextPhoto && previousPhoto.src === nextPhoto.src && previousQuestion === nextPhoto.closest('[data-question]')?.dataset.question) {
+    const style = nextPhoto.style.cssText;
+    nextPhoto.replaceWith(previousPhoto);
+    previousPhoto.getBoundingClientRect();
+    previousPhoto.style.cssText = style;
+  }
   bindEvents();
   const currentScript = $('#manager-script');
   if (currentScript && currentScript.dataset.scriptId === scriptPosition?.id) currentScript.scrollTop = scriptPosition.scroll;
@@ -520,6 +550,7 @@ function render() {
     if (Number.isFinite(remaining) && remaining > 0) revealTimer = setTimeout(schedule, remaining + 20);
   }
   animateScoreNumbers();
+  scheduleZoomProgress();
 }
 
 function animateScoreNumbers() {
@@ -571,7 +602,10 @@ async function moveTo(index, { skipGame = false } = {}) {
     chooseWinner();
   } else {
     const { key, slide } = tasteContext(index);
-    if (key === 'ox') {
+    if (key === 'zoom') {
+      if (slide.view === 'question') state.zoomGame = await api.prepareZoomQuestion(state.room, state.participants, state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, slide.questionIndex, resetAt);
+      if (slide.view === 'score') state.teamScores = await api.awardZoomPoints(state.room);
+    } else if (key === 'ox') {
       if (slide.view === 'question') state.oxGame = await api.prepareOxQuestion(state.room, state.participants, slide.questionIndex, resetAt);
       if (slide.view === 'score') state.teamScores = await api.awardOxPoints(state.room);
     } else {
@@ -646,6 +680,84 @@ async function voteOx(answer) {
   finally { state.voting = false; schedule(); }
 }
 
+async function requestZoomAnswer() {
+  const slide = STAGES[state.presentation?.slideIndex];
+  const control = state.zoomGame.control;
+  if (!state.online || state.voting || state.controlsLocked || document.hidden || !state.participantId || !state.zoomReady
+    || slide?.game !== 'zoom' || slide.view !== 'question' || control?.questionIndex !== slide.questionIndex
+    || control.phase !== 'open' || state.zoomRound.request || state.zoomRound.blocked) return;
+  state.voting = true; state.error = ''; schedule();
+  try { await api.submitZoomRequest(state.room, state.participantId, slide.questionIndex, control.roundId, control.attemptId); }
+  catch { showError('다른 참가자가 먼저 요청했거나 현재는 답변할 수 없습니다. 화면을 확인해주세요.'); }
+  finally { state.voting = false; schedule(); }
+}
+
+async function actOnZoom(name, token) {
+  const control = state.zoomGame.control;
+  const slide = STAGES[state.slideIndex];
+  if (!['host', 'manager'].includes(state.role) || !state.online || state.busy || state.controlsLocked || document.hidden
+    || slide?.game !== 'zoom' || slide.view !== 'question' || slide.questionIndex !== token.questionIndex
+    || control?.roundId !== token.roundId || control.questionIndex !== token.questionIndex) return;
+  lockControls(); state.busy = true;
+  try {
+    if (name === 'in' || name === 'out') await api.changeZoom(state.room, token.roundId, token.questionIndex, name === 'out' ? 1 : -1);
+    else if (name === 'skip') await api.skipZoomQuestion(state.room, token.roundId, token.questionIndex);
+    else if (name === 'correct' || name === 'wrong') await api.judgeZoom(state.room, token.roundId, token.questionIndex, token.requestId, name === 'correct');
+  } catch (error) { showGameError(error); }
+  finally { state.busy = false; schedule(); }
+}
+
+function scheduleZoomProgress() {
+  clearTimeout(zoomTimer);
+  const slide = STAGES[state.slideIndex], game = state.zoomGame, control = game.control;
+  const catchingUp = control?.questionIndex > slide?.questionIndex;
+  if (state.role === 'participant' || !state.online || !state.presenting || zoomAdvancing
+    || slide?.game !== 'zoom' || slide.view !== 'question' || !control || control.questionIndex < slide.questionIndex
+    || (!catchingUp && !['correct', 'wrong', 'skipped', 'complete'].includes(control.phase))) return;
+  const verdict = game.rounds?.[control.questionIndex]?.verdict;
+  const wait = catchingUp || control.phase === 'complete' ? 0 : (verdict?.judgedAt ?? 0) + ZOOM_FEEDBACK_DURATION - Date.now() - state.serverOffset;
+  zoomTimer = setTimeout(async () => {
+    zoomAdvancing = true;
+    const expectedIndex = state.slideIndex, resetAt = control.resetAt ?? null;
+    try {
+      const next = catchingUp || control.phase === 'complete' ? game : await api.finishZoomRound(state.room, control.roundId, control.questionIndex, verdict.requestId, Date.now() + state.serverOffset);
+      if (state.zoomGame.control?.roundId !== control.roundId || state.slideIndex !== expectedIndex || (state.presentation?.resetAt ?? null) !== resetAt) return;
+      if (next.control.questionIndex !== slide.questionIndex || next.control.phase === 'complete') {
+        const nextIndex = STAGES.findIndex(stage => stage.game === 'zoom' && (next.control.phase === 'complete' ? stage.view === 'score' : stage.view === 'question' && stage.questionIndex === next.control.questionIndex));
+        if (next.control.phase === 'complete') state.teamScores = await api.awardZoomPoints(state.room);
+        const result = await api.followZoomSlide(state.room, expectedIndex, nextIndex, resetAt);
+        if (result.committed) syncPresentation(result.snapshot.val());
+      }
+      zoomRetryAt = 0;
+    } catch (error) { zoomRetryAt = Date.now() + 2000; showGameError(error); }
+    finally { zoomAdvancing = false; schedule(); }
+  }, Math.max(10, wait, zoomRetryAt - Date.now()));
+}
+
+function editableZoomQuestions() {
+  state.zoomDraft ??= Object.fromEntries(Object.entries(state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS).map(([index, question]) => [index, { ...question }]));
+  return state.zoomDraft;
+}
+
+async function readZoomImage(file) {
+  if (!file.type.startsWith('image/') || file.size > 20 * 1024 * 1024) throw { userMessage: '20MB 이하의 사진 파일을 선택해주세요.' };
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const ratio = Math.min(1, 1400 / Math.max(image.width, image.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(image.width * ratio); canvas.height = Math.round(image.height * ratio);
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const data = canvas.toDataURL('image/jpeg', 0.85);
+    if (data.length > 1500000) throw { userMessage: '사진 용량이 큽니다. 더 작은 사진을 선택해주세요.' };
+    return data;
+  } finally { URL.revokeObjectURL(url); }
+}
+
 async function save() {
   const submittedRows = JSON.stringify(state.rows);
   let roster;
@@ -707,6 +819,11 @@ async function action(name, errorId) {
         if (state.oxDraft === questions) state.oxDraft = null;
       }
     }
+    if (name === 'zoom-save' && state.zoomDraft) {
+      const questions = state.zoomDraft;
+      await api.saveZoomQuestions(state.room, questions);
+      if (state.zoomDraft === questions) state.zoomDraft = null;
+    }
     if (['ox-start', 'ox-close', 'ox-reveal'].includes(name)) {
       const slide = STAGES[state.slideIndex];
       state.oxGame = await api.changeOxPhase(state.room, slide.questionIndex, name, state.oxGame.control?.roundId);
@@ -725,9 +842,32 @@ async function action(name, errorId) {
 
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
-  for (const control of document.querySelectorAll('[data-vote], [data-ox-vote]')) {
+  for (const control of document.querySelectorAll('[data-vote], [data-ox-vote], [data-zoom-request]')) {
     input.bindVote(control);
   }
+  document.querySelectorAll('[data-zoom-action]').forEach(control => {
+    const token = { roundId: control.dataset.roundId, questionIndex: Number(control.dataset.questionIndex), requestId: control.dataset.requestId };
+    control.addEventListener('click', () => { void actOnZoom(control.dataset.zoomAction, token); });
+  });
+  document.querySelectorAll('[data-zoom-image]').forEach(input => input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file || state.busy) return;
+    state.busy = true; schedule();
+    try { editableZoomQuestions()[input.dataset.zoomImage].image = await readZoomImage(file); }
+    catch (error) { showError(error); }
+    finally { state.busy = false; schedule(); }
+  }));
+  document.querySelectorAll('[data-zoom-answer], [data-zoom-focus-x], [data-zoom-focus-y]').forEach(input => input.addEventListener('input', () => {
+    const index = input.dataset.zoomAnswer ?? input.dataset.zoomFocusX ?? input.dataset.zoomFocusY;
+    const question = editableZoomQuestions()[index];
+    if (input.dataset.zoomAnswer !== undefined) question.answer = input.value;
+    else if (input.dataset.zoomFocusX !== undefined) question.focusX = Number(input.value);
+    else question.focusY = Number(input.value);
+    const marker = $(`[data-zoom-marker="${index}"]`);
+    if (marker) { marker.style.left = `${question.focusX}%`; marker.style.top = `${question.focusY}%`; }
+    $('[data-action="zoom-save"]').disabled = false;
+    $('#zoom-save-status').textContent = '저장 전 변경사항';
+  }));
   document.querySelectorAll('[data-ox-question], [data-ox-answer]').forEach(control => control.addEventListener('input', () => {
     const index = control.dataset.oxQuestion ?? control.dataset.oxAnswer;
     const questions = state.oxDraft ?? state.oxQuestions ?? emptyOxQuestions();
@@ -812,6 +952,7 @@ function attachParticipant(id) {
   state.participant = null; state.instruction = null; state.response = null; state.responseReady = false; state.submittedRoundId = null;
   state.tasteGames = {}; state.tasteVotes = {};
   state.oxGame = {}; state.oxRound = {}; state.oxReady = false;
+  state.zoomGame = {}; state.zoomRound = {}; state.zoomReady = false;
   if (!id) { watchActiveGame(); presenceEpoch++; presenceClose?.().catch(() => {}); presenceClose = null; state.participant = null; state.instruction = null; state.response = null; schedule(); return; }
   participantSubscriptions.watch(`participants/${id}`, person => { state.participant = person; void syncPresence(); schedule(); }, showError);
   participantSubscriptions.watch(`instructions/${id}`, instruction => { state.instruction = instruction; schedule(); }, showError);
@@ -821,12 +962,26 @@ function attachParticipant(id) {
 
 function watchActiveGame() {
   const { key, slide } = tasteContext();
-  const questionIndex = slide?.questionIndex ?? (slide?.view === 'score' ? OX_QUESTION_COUNT - 1 : 0);
-  const watchKey = `${state.role}:${state.participantId ?? ''}:${key}:${key === 'ox' ? questionIndex : ''}`;
+  const questionIndex = slide?.questionIndex ?? (slide?.view === 'score' ? (key === 'zoom' ? ZOOM_QUESTION_COUNT : OX_QUESTION_COUNT) - 1 : 0);
+  const watchKey = `${state.role}:${state.participantId ?? ''}:${key}:${['ox', 'zoom'].includes(key) ? questionIndex : ''}`;
   if (watchKey === gameWatchKey) return;
   gameSubscriptions.clear(); gameWatchKey = null;
   if (!state.uid || !state.room || (state.role === 'participant' && !state.participantId)) return;
   gameWatchKey = watchKey;
+  if (key === 'zoom') {
+    if (state.role === 'participant') {
+      const round = {};
+      state.zoomRound = round; state.zoomReady = false;
+      const ready = new Set();
+      gameSubscriptions.watch('zoomGame/control', value => { state.zoomGame.control = value; schedule(); }, showError);
+      for (const [field, path] of Object.entries({ request: 'request', verdict: 'verdict', blocked: `blocked/${state.participantId}` })) {
+        gameSubscriptions.watch(`zoomGame/rounds/${questionIndex}/${path}`, value => {
+          round[field] = value; ready.add(field); state.zoomReady = ready.size === 3; schedule();
+        }, showError);
+      }
+    } else gameSubscriptions.watch('zoomGame', value => { state.zoomGame = value ?? {}; schedule(); }, showGameError);
+    return;
+  }
   if (key === 'ox') {
     if (state.role === 'participant') {
       const round = {};
@@ -860,6 +1015,7 @@ function syncPresentation(presentation) {
     state.tasteGames = {};
     state.tasteVotes = {};
     state.oxGame = {}; state.oxRound = {}; state.oxReady = false;
+    state.zoomGame = {}; state.zoomRound = {}; state.zoomReady = false; zoomRetryAt = 0;
     state.teamScores = null;
     gameWatchKey = null;
     state.operatorError = null;
@@ -902,6 +1058,7 @@ function watchManagement() {
   managementSubscriptions.watch('teamScores', value => { state.teamScores = value; schedule(); }, showGameError);
   managementSubscriptions.watch('operatorError', value => { state.operatorError = value; schedule(); }, showError);
   managementSubscriptions.watch('oxQuestions', value => { state.oxQuestions = value; schedule(); }, showGameError);
+  managementSubscriptions.watch('zoomQuestions', value => { state.zoomQuestions = value; schedule(); }, showGameError);
   if (state.role === 'host') managementSubscriptions.watch('responses', value => { state.responses = value ?? {}; chooseWinner(); schedule(); }, showError);
 }
 
@@ -924,7 +1081,7 @@ function attachManager(device) {
 
 function currentVoteKey() {
   const { key, slide, game } = tasteContext();
-  return JSON.stringify([state.participantId, key, game.control?.roundId, game.control?.phase, slide?.questionIndex, state.presentation?.resetAt]);
+  return JSON.stringify([state.participantId, key, game.control?.roundId, game.control?.phase, game.control?.attemptId, slide?.questionIndex, state.presentation?.resetAt]);
 }
 
 function preventViewportGesture(event) {
