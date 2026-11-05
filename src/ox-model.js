@@ -1,4 +1,4 @@
-import { emptyScores } from './taste-model.js';
+import { emptyScores, REVEAL_INTERVAL } from './taste-model.js';
 
 export const OX_QUESTION_COUNT = 5;
 export const OX_REVEAL_DURATION = 1000;
@@ -14,6 +14,15 @@ export function oxSurvivors(round, answer) {
   return Object.fromEntries(Object.keys(round.eligible ?? {})
     .filter(id => round.eligible[id] === true && round.votes?.[id]?.answer === answer)
     .map(id => [id, true]));
+}
+
+export function oxEliminatedIds(round) {
+  return Object.keys(round?.eligible ?? {}).filter(id => !round?.result?.survivors?.[id]).sort();
+}
+
+export function oxSurvivorRevealEnd(round) {
+  const revealedAt = round?.result?.survivorsRevealedAt;
+  return Number.isFinite(revealedAt) ? revealedAt + oxEliminatedIds(round).length * REVEAL_INTERVAL + 600 : Infinity;
 }
 
 export function oxPoints(game) {

@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import * as api from './event-data.js';
 import { TEAM_IDS, TEAM_NAMES, STAGES, stageIndex, touchRoundIsActive, touchRoundResult, firstTouch, rosterFromInputs, rowsFromParticipants, readRosterDraft, onlineParticipants, participantUrl, friendlyError } from './event-model.js';
 import { TASTE_ROUNDS, REVEAL_INTERVAL, rankedTeams, revealFinished } from './taste-model.js';
-import { OX_QUESTION_COUNT, OX_REVEAL_DURATION, emptyOxQuestions, oxQuestionsReady } from './ox-model.js';
+import { OX_QUESTION_COUNT, OX_REVEAL_DURATION, emptyOxQuestions, oxQuestionsReady, oxEliminatedIds, oxSurvivorRevealEnd } from './ox-model.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
@@ -182,11 +182,12 @@ function nextBlocked() {
     if (slide.view === 'intro') return !game.control && !oxQuestionsReady(state.oxQuestions);
     if (slide.view === 'question') return !round || (game.control?.questionIndex === slide.questionIndex && !['closed', 'revealed'].includes(game.control.phase));
     if (slide.view === 'reveal') return !round?.result || Date.now() + state.serverOffset < round.result.revealedAt + OX_REVEAL_DURATION;
+    if (slide.view === 'survivors') return Date.now() + state.serverOffset < oxSurvivorRevealEnd(round);
   }
   if (slide.view === 'vote' && !game.result) return true;
   if (slide.view === 'vote') return !['prediction-closed', 'revealed'].includes(game.control?.phase);
   if (slide.view === 'reveal') return game.control?.phase !== 'revealed' || !revealFinished(game.result, Date.now() + state.serverOffset);
-  return state.slideIndex === STAGES.length - 1;
+  return stageIndex(state.slideIndex, 1) === state.slideIndex;
 }
 
 function tasteControls(disabled) {
@@ -230,6 +231,7 @@ function oxControls(slide, disabled) {
     if (game.control.phase === 'open') control = button('응답 마감', 'ox-close', 'dark', disabled);
   }
   if (slide.view === 'reveal' && current && game.control.phase === 'closed') control = button('정답 공개', 'ox-reveal', 'dark', disabled);
+  if (slide.view === 'survivors' && round?.result && round.result.survivorsRevealedAt == null) control = button('결과 공개', 'ox-survivors', 'dark', disabled);
   return `<section class="remote-game-controls" aria-label="OX 진행">${control}${round ? `<p class="remote-vote-count">${Object.keys(round.votes ?? {}).length} / ${Object.keys(round.eligible ?? {}).length}명 응답</p>` : ''}</section>`;
 }
 
@@ -315,6 +317,7 @@ function oxPresentation(slide) {
   if (slide.view === 'intro') return `<section class="taste-screen ox-intro"><span class="taste-eyebrow">RECREATION 02</span><h1>OX 퀴즈</h1><div class="ox-rules"><p><b>5</b> 문제 연속 도전</p><p>정답자만 다음 문제로</p><p>최종 생존자 1명당 <strong>+50점</strong></p></div></section>`;
   if (slide.view === 'score') return scorePresentation(state.oxGame.control?.roundId);
   const round = state.oxGame.rounds?.[slide.questionIndex];
+  if (slide.view === 'survivors') return oxSurvivorsPresentation(round);
   const result = slide.view === 'reveal' ? round?.result : null;
   const elapsed = result ? Math.max(0, Date.now() + state.serverOffset - result.revealedAt) : 0;
   const current = state.oxGame.control?.questionIndex === slide.questionIndex;
@@ -326,6 +329,21 @@ function oxPresentation(slide) {
       const survivors = Object.keys(result.survivors ?? {}).filter(id => state.oxGame.roster[id]?.team === team).length;
       return `<div data-team="${team}"><span>${TEAM_NAMES[team]}</span><strong>${survivors}<small>명 생존</small></strong></div>`;
     }).join('')}</div>` : `<p class="ox-status">${slide.view === 'reveal' ? '정답 공개를 기다려주세요' : current && state.oxGame.control?.phase === 'open' ? '휴대폰에서 O 또는 X를 선택해주세요' : current && state.oxGame.control?.phase === 'ready' ? '응답을 준비하고 있습니다' : '응답이 마감되었습니다'}</p>`}
+  </section>`;
+}
+
+function oxSurvivorsPresentation(round) {
+  const revealed = round?.result?.survivorsRevealedAt != null;
+  const elapsed = revealed ? Math.max(0, Date.now() + state.serverOffset - round.result.survivorsRevealedAt) : 0;
+  const eliminated = oxEliminatedIds(round);
+  return `<section class="taste-screen taste-reveal ox-survivor-screen">
+    <div class="reveal-teams">${TEAM_IDS.map(team => `<section class="reveal-team" data-team="${team}"><h2>${TEAM_NAMES[team]}</h2><div>${Object.entries(state.oxGame.roster ?? {}).filter(([, person]) => person.team === team).map(([id, person]) => {
+      const wasAlive = Boolean(round?.eligible?.[id]);
+      const fading = revealed && wasAlive && !round.result.survivors?.[id];
+      const alive = wasAlive && !fading;
+      const delay = fading ? eliminated.indexOf(id) * REVEAL_INTERVAL - elapsed : 0;
+      return `<div class="reveal-person ${alive ? 'is-alive' : ''} ${fading ? 'is-eliminated-now' : ''}" data-person="${id}" style="--elimination-delay:${delay}ms"><i aria-hidden="true"></i><span>${escape(person.name)}</span></div>`;
+    }).join('')}</div></section>`).join('')}</div>
   </section>`;
 }
 
@@ -466,6 +484,10 @@ function render() {
     const duration = slide.game === 'ox' ? OX_REVEAL_DURATION : Object.keys(result.order ?? {}).length * REVEAL_INTERVAL + 450;
     const remaining = result.revealedAt + duration - Date.now() - state.serverOffset;
     if (remaining > 0) revealTimer = setTimeout(schedule, remaining + 20);
+  }
+  if (state.presenting && slide.view === 'survivors') {
+    const remaining = oxSurvivorRevealEnd(game.rounds?.[slide.questionIndex]) - Date.now() - state.serverOffset;
+    if (Number.isFinite(remaining) && remaining > 0) revealTimer = setTimeout(schedule, remaining + 20);
   }
   animateScoreNumbers();
 }
@@ -653,6 +675,9 @@ async function action(name, errorId) {
     if (['ox-start', 'ox-close', 'ox-reveal'].includes(name)) {
       const slide = STAGES[state.slideIndex];
       state.oxGame = await api.changeOxPhase(state.room, slide.questionIndex, name, state.oxGame.control?.roundId);
+    }
+    if (name === 'ox-survivors') {
+      state.oxGame = await api.revealOxSurvivors(state.room, STAGES[state.slideIndex].questionIndex, state.oxGame.control?.roundId);
     }
     if (['start-preference', 'stop-preference', 'start-prediction', 'stop-prediction', 'reveal-answer', 'reveal-taste'].includes(name)) {
       const { key } = tasteContext();

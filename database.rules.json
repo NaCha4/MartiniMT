@@ -236,7 +236,7 @@
               ".validate": "newData.isBoolean()"
             },
             "slideIndex": {
-              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 23 && newData.val() % 1 === 0"
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 28 && newData.val() % 1 === 0"
             },
             "roundId": {
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20"
@@ -820,6 +820,9 @@
                     }
                   },
                   "revealedAt": {
+                    ".validate": "newData.isNumber() && (newData.val() === data.val() || newData.val() === now)"
+                  },
+                  "survivorsRevealedAt": {
                     ".validate": "newData.isNumber() && (newData.val() === data.val() || newData.val() === now)"
                   },
                   "$other": {

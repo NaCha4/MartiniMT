@@ -195,6 +195,20 @@ export async function changeOxPhase(room, questionIndex, action, roundId) {
 
 export const submitOxVote = (room, participantId, questionIndex, answer, roundId) => set(locationRef(room, `oxGame/rounds/${questionIndex}/votes/${participantId}`), { answer, roundId, submittedAt: serverTimestamp() });
 
+export async function revealOxSurvivors(room, questionIndex, roundId) {
+  await get(locationRef(room, 'oxGame'));
+  const result = await runTransaction(locationRef(room, 'oxGame'), current => {
+    const round = current?.rounds?.[questionIndex];
+    if (current?.control?.roundId !== roundId || !round?.result || round.result.survivorsRevealedAt != null) return;
+    return { ...current, rounds: { ...current.rounds, [questionIndex]: {
+      ...round, result: { ...round.result, survivorsRevealedAt: serverTimestamp() },
+    } } };
+  }, { applyLocally: false });
+  const game = result.snapshot.val();
+  if (game?.control?.roundId !== roundId || game?.rounds?.[questionIndex]?.result?.survivorsRevealedAt == null) throw { userMessage: '정답을 먼저 공개해주세요.' };
+  return game;
+}
+
 export async function awardOxPoints(room) {
   const game = await read(room, 'oxGame');
   if (game?.control?.questionIndex !== OX_QUESTION_COUNT - 1 || game.control.phase !== 'revealed'

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { rosterFromInputs, rowsFromParticipants, readRosterDraft, TEAM_NAMES, STAGES, nameKey, messageText, onlineParticipants, participantUrl, friendlyError, firstTouch, touchRoundIsActive, touchRoundResult, stageIndex, TOUCH_TITLE, TOUCH_BODY } from '../src/event-model.js';
 import { WHISKY_OPTIONS, SOJU_OPTIONS, MILITARY_OPTIONS, TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward, rankedTeams, revealFinished, REVEAL_INTERVAL } from '../src/taste-model.js';
-import { emptyOxQuestions, oxQuestionsReady, oxSurvivors, oxPoints } from '../src/ox-model.js';
+import { emptyOxQuestions, oxQuestionsReady, oxSurvivors, oxPoints, oxEliminatedIds, oxSurvivorRevealEnd } from '../src/ox-model.js';
 
 test('OX has five empty questions and alternating question/reveal screens', () => {
   const empty = emptyOxQuestions();
@@ -15,8 +15,26 @@ test('OX has five empty questions and alternating question/reveal screens', () =
   assert.equal(oxQuestionsReady({ ...ready, 0: { text: '   ', answer: 'O' } }), false);
   assert.equal(oxQuestionsReady({ ...ready, 0: { text: '문제', answer: '' } }), false);
   const stages = STAGES.filter(stage => stage.game === 'ox');
-  assert.deepEqual(stages.map(stage => stage.screenCode), Array.from({ length: 12 }, (_, index) => index + 14));
-  assert.deepEqual(stages.slice(1, -1).map(stage => stage.view), Array.from({ length: 5 }, () => ['question', 'reveal']).flat());
+  assert.deepEqual(stages.map(stage => stage.screenCode), Array.from({ length: 17 }, (_, index) => index + 14));
+  assert.deepEqual(stages.filter(stage => ['question', 'reveal'].includes(stage.view)).map(stage => stage.view), Array.from({ length: 5 }, () => ['question', 'reveal']).flat());
+  const order = [];
+  for (let index = 12; ; index = stageIndex(index, 1)) {
+    order.push(STAGES[index].view);
+    if (stageIndex(index, 1) === index) break;
+  }
+  assert.deepEqual(order, ['intro', ...Array.from({ length: 5 }, () => ['question', 'reveal', 'survivors']).flat(), 'score']);
+  assert.equal(STAGES[23].id, 'ox-score');
+  assert.equal(stageIndex(23, -1), 28);
+  assert.equal(stageIndex(24, -1), 14);
+});
+
+test('OX survivor reveal dims only this question’s eliminations and persists its completion time', () => {
+  const round = { eligible: { A1: true, A2: true, B1: true }, result: { survivors: { A1: true } } };
+  assert.deepEqual(oxEliminatedIds(round), ['A2', 'B1']);
+  assert.equal(oxSurvivorRevealEnd(round), Infinity);
+  round.result.survivorsRevealedAt = 1000;
+  assert.equal(oxSurvivorRevealEnd(round), 1000 + 2 * REVEAL_INTERVAL + 600);
+  assert.equal(oxSurvivorRevealEnd({ result: { survivorsRevealedAt: 0 } }), 600);
 });
 
 test('OX eliminates wrong and missing answers permanently and awards fifty points per final survivor once', () => {
@@ -90,7 +108,8 @@ test('a race accepts only the current round and chooses the earliest server time
   assert.equal(touchRoundIsActive(instruction, { step: 'join', updatedAt: 101 }), false);
   assert.equal(touchRoundIsActive(instruction, { step: 'closed', updatedAt: 100 }), false);
   assert.equal(stageIndex(0, -1), 0);
-  assert.equal(stageIndex(STAGES.length - 1, 1), STAGES.length - 1);
+  const last = STAGES.findIndex(stage => stage.id === 'ox-score');
+  assert.equal(stageIndex(last, 1), last);
 });
 
 test('taste game accepts all tied top choices and awards ten points per correct member', () => {

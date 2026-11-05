@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('OX runs five elimination rounds, awards survivors once, and resets progress while keeping questions', async ({ browser }) => {
-  test.setTimeout(120000);
+  test.setTimeout(150000);
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 960 } });
   const phones = await Promise.all(Array.from({ length: 5 }, () => browser.newContext({ viewport: { width: 1040, height: 480 }, isMobile: true, hasTouch: true })));
   for (const context of phones) await context.addInitScript(() => Object.defineProperty(document, 'fullscreenEnabled', { get: () => false }));
@@ -91,6 +91,27 @@ test('OX runs five elimination rounds, awards survivors once, and resets progres
         await host.screenshot({ path: '.cache/screenshots/ox-reveal.png' });
       }
       await next();
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(26 + index));
+      await expect(host.locator('.ox-survivor-screen .reveal-person')).toHaveCount(4);
+      await expect(host.locator('.ox-survivor-screen .is-alive')).toHaveCount(index === 0 ? 4 : index <= 2 ? 2 : 1);
+      await expect(host.locator('.ox-survivor-screen .is-eliminated-now')).toHaveCount(0);
+      await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+      if (index > 0) await expect(host.locator('[data-person="A2"]')).not.toHaveClass(/is-alive|is-eliminated-now/);
+      if (index === 0) await host.screenshot({ path: '.cache/screenshots/ox-survivors-before.png' });
+      await remote.getByRole('button', { name: '결과 공개', exact: true }).click();
+      await expect(host.locator('.ox-survivor-screen .is-alive')).toHaveCount(index < 2 ? 2 : 1);
+      await expect(host.locator('.ox-survivor-screen .is-eliminated-now')).toHaveCount(index === 0 ? 2 : index === 2 ? 1 : 0);
+      if (index === 0) {
+        await expect(host.locator('[data-person="A2"]')).toHaveCSS('animation-name', 'ox-person-dim');
+        await expect(host.locator('[data-person="A1"]')).toHaveCSS('animation-name', 'none');
+        await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeEnabled();
+        await expect(host.locator('[data-person="A2"]')).toHaveCSS('color', 'rgb(98, 94, 101)');
+        await host.reload();
+        await expect(host.locator('.ox-survivor-screen .is-alive')).toHaveCount(2);
+        await expect(host.locator('[data-person="A2"]')).toHaveCSS('color', 'rgb(98, 94, 101)');
+        await host.screenshot({ path: '.cache/screenshots/ox-survivors-after.png' });
+      }
+      await next();
     }
     await expect(host.locator('.presentation-screen-code')).toHaveText('25');
     await expect(host.locator('[data-score-team="A"]')).toHaveText('50');
@@ -125,6 +146,10 @@ test('OX runs five elimination rounds, awards survivors once, and resets progres
       await remote.getByRole('button', { name: '응답 마감', exact: true }).click();
       await next();
       await remote.getByRole('button', { name: '정답 공개', exact: true }).click();
+      await next();
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(26 + index));
+      await remote.getByRole('button', { name: '결과 공개', exact: true }).click();
+      await expect(host.locator('.ox-survivor-screen .is-alive')).toHaveCount(0);
       await next();
     }
     const noSurvivors = await host.evaluate(async () => {

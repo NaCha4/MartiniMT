@@ -112,7 +112,7 @@ const oxGameRules = {
         '.read': gameReader, '.validate': "newData.hasChildren(['answer','revealedAt'])",
         answer: { '.validate': "newData.val() === 'O' || newData.val() === 'X'" },
         survivors: { '$participant': { '.validate': `newData.val() === true && ${ox}.child('roster').child($participant).exists()` } },
-        revealedAt: storedTimestamp, '$other': denyExtra,
+        revealedAt: storedTimestamp, survivorsRevealedAt: storedTimestamp, '$other': denyExtra,
       },
       '$other': denyExtra,
     },

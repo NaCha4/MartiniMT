@@ -30,7 +30,17 @@ export const STAGES = [
     { id: `ox-reveal-${questionIndex + 1}`, screenCode: 16 + questionIndex * 2, game: 'ox', view: 'reveal', questionIndex, title: `OX ${questionIndex + 1}번 정답`, script: '응답이 마감되었습니다. 정답을 공개하겠습니다.' },
   ]).flat(),
   { id: 'ox-score', screenCode: 25, game: 'ox', view: 'score', title: 'OX 최종 점수', script: '다섯 문제를 모두 맞힌 최종 생존자 한 명당 팀에 50점을 더합니다. 누적 점수를 확인하겠습니다.' },
+  ...Array.from({ length: 5 }, (_, questionIndex) => ({
+    id: `ox-survivors-${questionIndex + 1}`, screenCode: 26 + questionIndex, game: 'ox', view: 'survivors', questionIndex,
+    title: `OX ${questionIndex + 1}번 생존자`, script: '이번 문제에 도전한 사람들의 불이 켜져 있습니다. 결과를 공개하면 이번에 탈락한 사람의 불이 꺼집니다. 살아남은 사람은 다음 문제에 도전합니다.',
+  })),
 ];
+// Append new stages so stored slide indices and existing screen codes stay valid.
+const presentationOrder = STAGES.flatMap((stage, index) => {
+  if (stage.view === 'survivors') return [];
+  if (stage.game === 'ox' && stage.view === 'reveal') return [index, STAGES.findIndex(candidate => candidate.view === 'survivors' && candidate.questionIndex === stage.questionIndex)];
+  return [index];
+});
 export function participantUrl(href, room, networkUrl) {
   const url = new URL(href);
   if (networkUrl && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
@@ -43,7 +53,10 @@ export function participantUrl(href, room, networkUrl) {
   url.searchParams.set('room', room);
   return url.href;
 }
-export function stageIndex(index, direction) { return Math.max(0, Math.min(STAGES.length - 1, index + direction)); }
+export function stageIndex(index, direction) {
+  const position = presentationOrder.indexOf(index);
+  return presentationOrder[Math.max(0, Math.min(presentationOrder.length - 1, position + direction))];
+}
 export function instructionIsCurrent(instruction, stage) { return stage.step === 'join' && Number(instruction?.createdAt) >= Number(stage.updatedAt); }
 export function touchRoundIsActive(instruction, stage) {
   return instructionIsCurrent(instruction, stage) && instruction?.title === TOUCH_TITLE && instruction?.body === TOUCH_BODY;

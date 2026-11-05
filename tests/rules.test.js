@@ -79,6 +79,17 @@ test('OX rejects eliminated members, wrong screens, future questions and pre-res
   assert.equal((await get(location(db('host'), 'oxQuestions/0/answer'))).val(), 'O');
 });
 
+test('only controllers can publish the survivor list time and old results remain valid', async () => {
+  await createOxGame(); await configureManager(); await claimManager('manager');
+  await assertSucceeds(set(location(db('host'), 'oxGame/rounds/0/result'), { answer: 'O', survivors: { A1: true }, revealedAt: serverTimestamp() }));
+  await assertFails(set(location(db('alice'), 'oxGame/rounds/0/result/survivorsRevealedAt'), serverTimestamp()));
+  await assertFails(set(location(db('host'), 'oxGame/rounds/0/result/survivorsRevealedAt'), 1));
+  await assertSucceeds(set(location(db('manager'), 'oxGame/rounds/0/result/survivorsRevealedAt'), serverTimestamp()));
+  assert.ok((await get(location(db('alice'), 'oxGame/rounds/0/result'))).val().survivorsRevealedAt > 0);
+  await assertSucceeds(set(location(db('manager'), 'presentation'), { active: true, slideIndex: 24, updatedAt: serverTimestamp() }));
+  await assertFails(oxVote('alice', 'A1'));
+});
+
 test('only the event owner can manage roster, stage and instructions', async () => {
   await create();
   await assertSucceeds(get(location(db('host'), 'participants')));
@@ -391,7 +402,7 @@ test('soju ballots are independent and only accepted on the soju voting screen',
   assert.equal((await get(location(db('alice'), 'tasteGame/preferenceVotes/A1'))).val().optionId, 'peat');
   await assertSucceeds(set(location(db('host'), 'presentation'), { active: true, slideIndex: 8, updatedAt: serverTimestamp() }));
   await assertFails(sojuVote('bob', 'A2', 'jinro'));
-  await assertFails(set(location(db('host'), 'presentation'), { active: true, slideIndex: 24, updatedAt: serverTimestamp() }));
+  await assertFails(set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.length, updatedAt: serverTimestamp() }));
 });
 
 test('military voting stays private and only accepts each vote on the military screen', async () => {
@@ -422,5 +433,5 @@ test('military voting stays private and only accepts each vote on the military s
   await update(location(db('host'), 'militaryGame/control'), { phase: 'prediction-closed', updatedAt: serverTimestamp() });
   await assertFails(vote('bob', 'A2', 'marines', 'prediction'));
   await assertSucceeds(set(location(db('host'), 'presentation'), { active: true, slideIndex: 11, updatedAt: serverTimestamp() }));
-  await assertFails(set(location(db('host'), 'presentation'), { active: true, slideIndex: 24, updatedAt: serverTimestamp() }));
+  await assertFails(set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.length, updatedAt: serverTimestamp() }));
 });

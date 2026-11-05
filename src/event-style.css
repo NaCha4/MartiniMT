@@ -673,6 +673,23 @@ dialog textarea { resize: vertical; }
 .reveal-person.is-correct i { animation: node-light .32s ease-out var(--reveal-delay) both; }
 @keyframes person-light { from { color: #625e65; background: #1b1b1e; border-color: #2a292d; box-shadow: none; } to { color: #f4eee5; background: color-mix(in srgb, var(--signal-color, #DDBD84), #171719 90%); border-color: var(--signal-color, #DDBD84); box-shadow: 0 0 24px color-mix(in srgb, var(--signal-color, #DDBD84), transparent 85%); } }
 @keyframes node-light { from { background: #3d3941; box-shadow: none; } to { background: var(--signal-color, #DDBD84); box-shadow: 0 0 12px var(--signal-color, #DDBD84); } }
+.ox-survivor-screen .reveal-person { border-radius: 0; }
+.ox-survivor-screen .reveal-person i { border-radius: 0; }
+.ox-survivor-screen .reveal-person.is-alive { color: #f4eee5; background: color-mix(in srgb, var(--signal-color), #171719 90%); border-color: var(--signal-color); box-shadow: 0 0 24px color-mix(in srgb, var(--signal-color), transparent 85%); }
+.ox-survivor-screen .reveal-person.is-alive i { background: var(--signal-color); box-shadow: 0 0 12px var(--signal-color); }
+.ox-survivor-screen .reveal-person.is-eliminated-now { animation: ox-person-dim 600ms ease-out var(--elimination-delay) both; }
+.ox-survivor-screen .reveal-person.is-eliminated-now i { animation: ox-node-dim 600ms ease-out var(--elimination-delay) both; }
+@keyframes ox-person-dim {
+  from { color: #f4eee5; background: color-mix(in srgb, var(--signal-color), #171719 90%); border-color: var(--signal-color); box-shadow: 0 0 24px color-mix(in srgb, var(--signal-color), transparent 85%); }
+  to { color: #625e65; background: #1b1b1e; border-color: #2a292d; box-shadow: none; }
+}
+@keyframes ox-node-dim {
+  from { background: var(--signal-color); box-shadow: 0 0 12px var(--signal-color); }
+  to { background: #3d3941; box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ox-survivor-screen .reveal-person.is-eliminated-now, .ox-survivor-screen .reveal-person.is-eliminated-now i { animation: none; }
+}
 .taste-score { display: flex; flex-direction: column; }
 .scoreboard { position: relative; flex: 1; min-height: 0; width: 80%; align-self: center; }
 .score-row { position: absolute; inset: 0 0 auto; height: calc(25% - 2vh); display: flex; align-items: center; gap: 2vw; padding-inline: 3vw; border: 1px solid var(--signal-color, var(--color-highlight-border)); border-radius: 10px; background: linear-gradient(100deg, color-mix(in srgb, var(--signal-color, #DDBD84), transparent 90%), var(--color-panel)); animation: rank-move 1.6s cubic-bezier(.22,.75,.23,1) var(--score-elapsed) both; }
