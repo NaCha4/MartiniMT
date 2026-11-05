@@ -306,7 +306,7 @@ function tastePresentation(slide) {
     const topIds = game.result?.topIds ?? {};
     const tied = Object.keys(topIds).length > 1;
     return `<section class="taste-screen taste-ballot-screen" data-game="${escape(slide.game)}" style="--answer-delay:-${answerElapsed}ms">
-      <div class="whisky-options">${Object.entries(game.options ?? {}).sort(([, a], [, b]) => a.order - b.order).map(([id, option]) => {
+      <div class="whisky-options">${Object.entries(game.options ?? TASTE_ROUNDS[slide.game].options).sort(([, a], [, b]) => a.order - b.order).map(([id, option]) => {
         const visual = Object.hasOwn(WHISKY_VISUALS, id) ? WHISKY_VISUALS[id] : null;
         const sojuVisual = Object.hasOwn(SOJU_VISUALS, id) ? SOJU_VISUALS[id] : null;
         const militaryVisual = Object.hasOwn(MILITARY_VISUALS, id) ? MILITARY_VISUALS[id] : null;
@@ -350,12 +350,13 @@ function oxPresentation(slide) {
   if (slide.view === 'score') return scorePresentation(state.oxGame.control?.roundId);
   const round = state.oxGame.rounds?.[slide.questionIndex];
   if (slide.view === 'survivors') return oxSurvivorsPresentation(round);
+  const prompt = round?.prompt ?? state.oxGame.questions?.[slide.questionIndex]?.text ?? state.oxQuestions?.[slide.questionIndex]?.text ?? '';
   const result = round?.result;
   const elapsed = result ? Math.max(0, Date.now() + state.serverOffset - result.revealedAt) : 0;
   const current = state.oxGame.control?.questionIndex === slide.questionIndex;
   return `<section class="taste-screen ox-screen ${result ? 'is-revealed' : ''}" style="--ox-delay:-${elapsed}ms">
     <header class="ox-heading"><span>OX QUIZ</span><span>${String(slide.questionIndex + 1).padStart(2, '0')} / 05</span></header>
-    <h1 class="ox-prompt ${(round?.prompt?.length ?? 0) > 100 ? 'is-long' : ''}">${escape(round?.prompt ?? '')}</h1>
+    <h1 class="ox-prompt ${prompt.length > 100 ? 'is-long' : ''}">${escape(prompt)}</h1>
     <div class="ox-symbols" aria-label="${result ? `정답 ${result.answer}` : 'O 또는 X'}">${['O', 'X'].map(answer => `<div class="ox-symbol ${result ? result.answer === answer ? 'is-correct' : 'is-wrong' : ''}" data-answer="${answer}">${answer}</div>`).join('')}</div>
     <p class="ox-status">${result ? '' : current && state.oxGame.control?.phase === 'open' ? '휴대폰에서 O 또는 X를 선택해주세요' : current && state.oxGame.control?.phase === 'ready' ? '응답을 준비하고 있습니다' : '응답이 마감되었습니다'}</p>
   </section>`;
@@ -551,9 +552,13 @@ function chooseWinner() {
   }).catch(error => { state.finalizingWinner = false; showError(error); });
 }
 
-async function moveTo(index) {
+async function moveTo(index, { skipGame = false } = {}) {
   const resetAt = state.presentation?.resetAt ?? null;
-  if (index === 0) {
+  if (skipGame) {
+    await api.setPresentationSlide(state.room, index, resetAt);
+    state.slideIndex = index;
+    state.winner = null; state.raceRoundId = null;
+  } else if (index === 0) {
     state.raceRoundId = null; state.winner = null;
     await api.setPresentation(state.room, true, resetAt);
     state.slideIndex = 0;
@@ -579,14 +584,15 @@ async function moveTo(index) {
   }
   schedule();
 }
-async function advance(direction) {
+async function advance(direction, { skipGame = false } = {}) {
   if (!state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden) return;
+  const directNavigation = skipGame && state.role === 'host';
   const next = stageIndex(state.slideIndex, direction);
   if (next === state.slideIndex) return;
-  if (direction > 0 && nextBlocked()) return;
+  if (direction > 0 && !directNavigation && nextBlocked()) return;
   lockControls();
   state.busy = true;
-  try { await moveTo(next); } catch (error) { showError(error); }
+  try { await moveTo(next, { skipGame: directNavigation }); } catch (error) { showError(error); }
   finally { state.busy = false; schedule(); }
 }
 
@@ -944,7 +950,7 @@ document.addEventListener('fullscreenchange', controllerViewportChanged);
 window.addEventListener('resize', controllerViewportChanged);
 screen.orientation?.addEventListener('change', controllerViewportChanged);
 const controlTarget = target => target instanceof Element && target.closest('button, a, input, textarea, select, dialog, [data-no-slide]');
-document.addEventListener('click', event => { if (state.role === 'host' && state.presenting && event.button === 0 && event.detail < 2 && !controlTarget(event.target) && !window.getSelection()?.toString()) void advance(1); });
+document.addEventListener('click', event => { if (state.role === 'host' && state.presenting && event.button === 0 && event.detail < 2 && !controlTarget(event.target) && !window.getSelection()?.toString()) void advance(1, { skipGame: true }); });
 document.addEventListener('contextmenu', event => {
   if (state.role !== 'host' || !state.presenting) {
     if (interactionLocked() || state.controlsLocked) event.preventDefault();
