@@ -38,7 +38,7 @@ export const STAGES = [
   { id: 'zoom-intro', screenCode: 31, game: 'zoom', view: 'intro', title: '사진 확대 퀴즈', script: '확대된 사진을 보고 무엇인지 맞혀주세요. 사진은 세 번에 걸쳐 전체 모습까지 공개됩니다. 정답 요청을 가장 먼저 누른 한 명에게 답변 기회가 주어집니다. 정답 한 개당 팀에 50점이 추가됩니다.' },
   ...Array.from({ length: 5 }, (_, questionIndex) => ({
     id: `zoom-question-${questionIndex + 1}`, screenCode: 32 + questionIndex, game: 'zoom', view: 'question', questionIndex,
-    title: `사진 ${questionIndex + 1}번`, script: '사진의 정체를 알겠다면 정답 제출 버튼을 눌러주세요. 먼저 요청한 한 명만 답변합니다. 오답이면 이 사진에는 다시 도전할 수 없으며 다음 사진부터 참여할 수 있습니다.',
+    title: `사진 ${questionIndex + 1}번`, script: '사진의 정체를 알겠다면 정답 제출 버튼을 눌러주세요. 먼저 요청한 한 명만 답변합니다. 각 조는 사진마다 한 번만 요청할 수 있으며, 요청한 조는 다음 사진부터 다시 참여합니다.',
   })),
   { id: 'zoom-score', screenCode: 37, game: 'zoom', view: 'score', title: '사진 퀴즈 최종 점수', script: '다섯 장의 사진이 모두 공개되었습니다. 정답 한 개당 50점을 팀 점수에 합산하겠습니다.' },
 ];

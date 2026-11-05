@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { STAGES, stageIndex } from '../src/event-model.js';
-import { ZOOM_LEVELS, zoomQuestionsReady, zoomPoints, judgeZoomRequest, finishZoomFeedback } from '../src/zoom-model.js';
+import { ZOOM_LEVELS, zoomLevels, zoomQuestionsReady, zoomPoints, judgeZoomRequest, finishZoomFeedback } from '../src/zoom-model.js';
 import { zoomPresentation, zoomControls, zoomParticipant, zoomEditor } from '../src/zoom-view.js';
 
 const questions = Object.fromEntries(Array.from({ length: 5 }, (_, index) => [index, { image: `/photos/${index}.jpg`, answer: `정답 ${index}`, focusX: 50, focusY: 50 }]));
 const game = () => ({
   control: { roundId: 'round', questionIndex: 0, phase: 'open', zoomStep: 1, attemptId: 'attempt' },
-  questions, roster: { A1: { name: '<민수>', team: 'A' }, B1: { name: '영희', team: 'B' } },
+  questions, roster: { A1: { name: '<민수>', team: 'A' }, A2: { name: '지수', team: 'A' }, B1: { name: '영희', team: 'B' } },
   rounds: { 0: { openedAt: 0, request: { id: 'request', participantId: 'A1', submittedAt: 1000 } } },
 });
 
@@ -28,6 +28,10 @@ test('photo configuration requires five bounded images and valid crop coordinate
   assert.equal(zoomQuestionsReady({ ...questions, 0: { ...questions[0], image: '' } }), false);
   assert.equal(zoomQuestionsReady({ ...questions, 0: { ...questions[0], focusX: 101 } }), false);
   assert.equal(zoomQuestionsReady({ ...questions, 0: { ...questions[0], image: 'x'.repeat(1500001) } }), false);
+  assert.equal(zoomQuestionsReady({ ...questions, 0: { ...questions[0], zoom: 8 } }), true);
+  for (const zoom of [0, 81, NaN, '8']) assert.equal(zoomQuestionsReady({ ...questions, 0: { ...questions[0], zoom } }), false);
+  assert.deepEqual(zoomLevels(questions[0]), ZOOM_LEVELS);
+  assert.deepEqual(zoomLevels({ ...questions[0], zoom: 14 }), [14, 4.67, 2, 1]);
 });
 
 test('the zoom introduction omits the magnification sequence below the title', () => {
@@ -38,12 +42,14 @@ test('the zoom introduction omits the magnification sequence below the title', (
   assert.match(html, /50점/);
 });
 
-test('judgment binds to the active request and an incorrect player is blocked for this photo', () => {
+test('judgment binds to the active request and blocks the requesting team for this photo', () => {
   const current = game();
   assert.equal(judgeZoomRequest(current, 'old-request', true, 2000), undefined);
   const judged = judgeZoomRequest(current, 'request', false, 2000);
   assert.equal(judged.control.phase, 'wrong');
   assert.equal(judged.rounds[0].blocked.A1, true);
+  assert.equal(judged.rounds[0].blocked.A2, true);
+  assert.equal(judged.rounds[0].blocked.B1, undefined);
   assert.equal(judgeZoomRequest(judged, 'request', true, 2001), undefined);
   assert.equal(finishZoomFeedback(judged, 'round', 0, 'request', 3999, 'next', 4000), undefined);
   const reopened = finishZoomFeedback(judged, 'round', 0, 'request', 4000, 'next', 4000);
@@ -52,6 +58,7 @@ test('judgment binds to the active request and an incorrect player is blocked fo
   assert.equal(reopened.control.attemptId, 'next');
   assert.equal(reopened.rounds[0].request, undefined);
   assert.equal(reopened.rounds[0].blocked.A1, true);
+  assert.equal(reopened.rounds[0].blocked.A2, true);
   assert.equal(current.rounds[0].blocked, undefined);
 });
 
@@ -75,17 +82,46 @@ test('request and verdict overlays retain the photo and escape participant names
   const requested = zoomPresentation(current, questions, slide, 1500);
   assert.match(requested, /zoom-photo/);
   assert.match(requested, /&lt;민수&gt; 님/);
-  assert.match(requested, /정답 요청/);
+  assert.match(requested, /정답요청!/);
+  assert.match(requested, /zoom-notice-band/);
   assert.doesNotMatch(requested, /정답 0/);
   const judged = judgeZoomRequest(current, 'request', true, 2000);
   const correct = zoomPresentation(judged, questions, slide, 2200);
   assert.match(correct, /정답!/);
   assert.match(correct, /--zoom:1;/);
   assert.match(correct, /\+50점/);
+  assert.doesNotMatch(zoomPresentation(current, questions, slide, 2800), /zoom-notice/);
+  assert.doesNotMatch(zoomPresentation(judged, questions, slide, 3800), /zoom-notice/);
   const remote = zoomControls(current, slide, false);
   assert.match(remote, /data-zoom-action="correct"/);
   assert.match(remote, /data-request-id="request"/);
   assert.match(remote, /정답 0/);
+});
+
+test('teammates wait after a request and remain blocked after an incorrect answer until the next photo', () => {
+  const current = game();
+  const args = { game: current, round: current.rounds[0], ready: true, participant: current.roster.A2, participantId: 'A2', questionIndex: 0, disabled: false, error: '' };
+  assert.match(zoomParticipant(args), /우리 조가 답변/);
+  assert.doesNotMatch(zoomParticipant(args), /data-zoom-request/);
+  const judged = judgeZoomRequest(current, 'request', false, 1000);
+  const reopened = finishZoomFeedback(judged, 'round', 0, 'request', 3000, 'next', 3000);
+  assert.match(zoomParticipant({ ...args, game: reopened, round: { blocked: reopened.rounds[0].blocked.A2 } }), /다음 사진부터/);
+  assert.doesNotMatch(zoomParticipant({ ...args, game: reopened, round: { blocked: true } }), /data-zoom-request/);
+  reopened.control.questionIndex = 1;
+  assert.match(zoomParticipant({ ...args, game: reopened, round: {}, questionIndex: 1 }), /data-zoom-request/);
+});
+
+test('correct and wrong banners leave the viewport while the photo remains', () => {
+  for (const correct of [true, false]) {
+    const judged = judgeZoomRequest(game(), 'request', correct, 1000);
+    const slide = { view: 'question', questionIndex: 0 };
+    const active = zoomPresentation(judged, questions, slide, 1500);
+    assert.match(active, /zoom-notice-band/);
+    assert.ok(active.includes(correct ? '정답!' : '오답!'));
+    const finished = zoomPresentation(judged, questions, slide, 3000);
+    assert.doesNotMatch(finished, /zoom-notice/);
+    assert.match(finished, /class="zoom-photo"/);
+  }
 });
 
 test('only eligible, fully loaded participants receive an enabled answer-request button', () => {

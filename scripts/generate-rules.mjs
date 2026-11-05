@@ -120,6 +120,9 @@ const oxGameRules = {
   '$other': denyExtra,
 };
 const zoom = `${s}.child('zoomGame')`;
+const zoomTeam = `${zoom}.child('roster').child(${pid}).child('team').val()`;
+const zoomTeamUnblocked = Array.from({ length: 6 }, (_, index) =>
+  `!${zoom}.child('rounds').child($question).child('blocked').child(${zoomTeam} + '${index + 1}').exists()`).join(' && ');
 const zoomScreens = STAGES.map((stage, index) => stage.game === 'zoom' && stage.view === 'question'
   ? `($question === '${stage.questionIndex}' && ${s}.child('presentation/slideIndex').val() === ${index})` : null).filter(Boolean).join(' || ');
 const zoomQuestions = {
@@ -130,6 +133,7 @@ const zoomQuestions = {
     answer: { '.validate': 'newData.isString() && newData.val().length <= 100' },
     focusX: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 100' },
     focusY: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 100' },
+    zoom: { '.validate': 'newData.isNumber() && newData.val() >= 2 && newData.val() <= 80' },
     '$other': denyExtra,
   },
 };
@@ -154,7 +158,7 @@ const zoomGameRules = {
       blocked: { '$participant': { '.read': self, '.validate': `newData.val() === true && ${zoom}.child('roster').child($participant).exists()` } },
       request: {
         '.read': gameReader,
-        '.write': `${member} && !data.exists() && newData.exists() && newData.child('participantId').val() === ${pid} && ${zoom}.child('roster').child(${pid}).exists() && ${s}.child('presentation/active').val() === true && (${zoomScreens}) && ${zoom}.child('control/questionIndex').val() + '' === $question && ${zoom}.child('control/phase').val() === 'open' && !${zoom}.child('rounds').child($question).child('blocked').child(${pid}).exists() && newData.child('roundId').val() === ${zoom}.child('control/roundId').val() && newData.child('attemptId').val() === ${zoom}.child('control/attemptId').val() && ${zoom}.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+        '.write': `${member} && !data.exists() && newData.exists() && newData.child('participantId').val() === ${pid} && ${zoom}.child('roster').child(${pid}).exists() && ${s}.child('presentation/active').val() === true && (${zoomScreens}) && ${zoom}.child('control/questionIndex').val() + '' === $question && ${zoom}.child('control/phase').val() === 'open' && !${zoom}.child('rounds').child($question).child('blocked').child(${pid}).exists() && ${zoomTeamUnblocked} && newData.child('roundId').val() === ${zoom}.child('control/roundId').val() && newData.child('attemptId').val() === ${zoom}.child('control/attemptId').val() && ${zoom}.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
         '.validate': "newData.hasChildren(['id','participantId','roundId','attemptId','submittedAt'])",
         id: text(20), participantId: { '.validate': `newData.isString() && ${zoom}.child('roster').child(newData.val()).exists()` },
         roundId: text(20), attemptId: text(20), submittedAt: storedTimestamp, '$other': denyExtra,

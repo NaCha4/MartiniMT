@@ -7,8 +7,9 @@ import { TASTE_ROUNDS, REVEAL_INTERVAL, rankedTeams, revealFinished } from './ta
 import { OX_QUESTION_COUNT, OX_REVEAL_DURATION, emptyOxQuestions, oxQuestionsReady, oxEliminatedIds, oxSurvivorRevealEnd } from './ox-model.js';
 import { createInputController } from './input-controller.js';
 import { createSubscriptionGroup } from './subscription-group.js';
-import { ZOOM_FEEDBACK_DURATION, ZOOM_QUESTION_COUNT } from './zoom-model.js';
+import { ZOOM_FEEDBACK_DURATION, ZOOM_QUESTION_COUNT, ZOOM_NOTICE_DURATION } from './zoom-model.js';
 import { zoomEditor, zoomPresentation, zoomControls, zoomParticipant } from './zoom-view.js';
+import { bindZoomEditor } from './zoom-editor.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
@@ -74,6 +75,7 @@ let managerSaveTimer, managerSavePromise;
 let controlsUnlockTimer, scriptPosition;
 let revealTimer, scoreFrame;
 let zoomTimer, zoomAdvancing = false, zoomRetryAt = 0;
+let zoomEditing = false;
 let gameWatchKey;
 const watchRoom = (path, onValue, onError) => api.watch(state.room, path, onValue, onError);
 const participantSubscriptions = createSubscriptionGroup(watchRoom);
@@ -90,7 +92,7 @@ const input = createInputController({
   onChange: schedule,
 });
 
-function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = null; if (!composing && !input.active) render(); }); }
+function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = null; if (!composing && !input.active && !zoomEditing) render(); }); }
 function relayOperatorError(message) {
   if (state.role === 'host' && state.presenting && state.room) {
     // Keep the original local error if its delivery also fails.
@@ -515,7 +517,7 @@ function render() {
   const previousPhoto = $('.zoom-photo');
   const previousQuestion = previousPhoto?.closest('[data-question]')?.dataset.question;
   const focused = document.activeElement, focusId = focused?.id;
-  const selection = focused && 'selectionStart' in focused ? [focused.selectionStart, focused.selectionEnd] : null;
+  const selection = Number.isInteger(focused?.selectionStart) ? [focused.selectionStart, focused.selectionEnd] : null;
   const script = $('#manager-script');
   if (script) scriptPosition = { id: script.dataset.scriptId, scroll: script.scrollTop };
   document.body.classList.toggle('is-presenting', state.role === 'host' && state.presenting);
@@ -548,6 +550,12 @@ function render() {
   if (state.presenting && slide.view === 'survivors') {
     const remaining = oxSurvivorRevealEnd(game.rounds?.[slide.questionIndex]) - Date.now() - state.serverOffset;
     if (Number.isFinite(remaining) && remaining > 0) revealTimer = setTimeout(schedule, remaining + 20);
+  }
+  if (state.presenting && slide.game === 'zoom' && slide.view === 'question') {
+    const round = game.rounds?.[slide.questionIndex];
+    const noticeAt = round?.verdict?.judgedAt ?? round?.request?.submittedAt;
+    const remaining = noticeAt + ZOOM_NOTICE_DURATION - Date.now() - state.serverOffset;
+    if (remaining > 0) revealTimer = setTimeout(schedule, remaining + 20);
   }
   animateScoreNumbers();
   scheduleZoomProgress();
@@ -688,7 +696,7 @@ async function requestZoomAnswer() {
     || control.phase !== 'open' || state.zoomRound.request || state.zoomRound.blocked) return;
   state.voting = true; state.error = ''; schedule();
   try { await api.submitZoomRequest(state.room, state.participantId, slide.questionIndex, control.roundId, control.attemptId); }
-  catch { showError('다른 참가자가 먼저 요청했거나 현재는 답변할 수 없습니다. 화면을 확인해주세요.'); }
+  catch { showError('다른 조가 먼저 요청했거나 우리 조의 답변 기회를 이미 사용했습니다. 화면을 확인해주세요.'); }
   finally { state.voting = false; schedule(); }
 }
 
@@ -853,21 +861,22 @@ function bindEvents() {
     const file = input.files?.[0];
     if (!file || state.busy) return;
     state.busy = true; schedule();
-    try { editableZoomQuestions()[input.dataset.zoomImage].image = await readZoomImage(file); }
+    try {
+      const image = await readZoomImage(file);
+      Object.assign(editableZoomQuestions()[input.dataset.zoomImage], { image, focusX: 50, focusY: 50 });
+    }
     catch (error) { showError(error); }
     finally { state.busy = false; schedule(); }
   }));
-  document.querySelectorAll('[data-zoom-answer], [data-zoom-focus-x], [data-zoom-focus-y]').forEach(input => input.addEventListener('input', () => {
-    const index = input.dataset.zoomAnswer ?? input.dataset.zoomFocusX ?? input.dataset.zoomFocusY;
-    const question = editableZoomQuestions()[index];
-    if (input.dataset.zoomAnswer !== undefined) question.answer = input.value;
-    else if (input.dataset.zoomFocusX !== undefined) question.focusX = Number(input.value);
-    else question.focusY = Number(input.value);
-    const marker = $(`[data-zoom-marker="${index}"]`);
-    if (marker) { marker.style.left = `${question.focusX}%`; marker.style.top = `${question.focusY}%`; }
-    $('[data-action="zoom-save"]').disabled = false;
-    $('#zoom-save-status').textContent = '저장 전 변경사항';
-  }));
+  bindZoomEditor(document, {
+    getQuestion: index => (state.zoomDraft ?? state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS)[index],
+    editQuestion: (index, changes) => {
+      Object.assign(editableZoomQuestions()[index], changes);
+      $('[data-action="zoom-save"]').disabled = false;
+      $('#zoom-save-status').textContent = '저장 전 변경사항';
+    },
+    onDragging: active => { zoomEditing = active; if (!active) schedule(); },
+  });
   document.querySelectorAll('[data-ox-question], [data-ox-answer]').forEach(control => control.addEventListener('input', () => {
     const index = control.dataset.oxQuestion ?? control.dataset.oxAnswer;
     const questions = state.oxDraft ?? state.oxQuestions ?? emptyOxQuestions();
