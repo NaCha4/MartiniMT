@@ -8,11 +8,29 @@ import { OX_QUESTION_COUNT, OX_REVEAL_DURATION, emptyOxQuestions, oxQuestionsRea
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
+import chamisulImage from './assets/soju/chamisul.jpg';
+import chumchurumImage from './assets/soju/chumchurum.png';
+import jinroImage from './assets/soju/jinro.jpg';
+import saeroImage from './assets/soju/saero.png';
+import armyImage from './assets/military/army.webp';
+import airforceImage from './assets/military/airforce.jpg';
+import marinesImage from './assets/military/marines.webp';
 
 const WHISKY_VISUALS = {
   peat: { image: peatImage, alt: '피트 연기와 황금빛 위스키' },
   sherry: { image: sherryImage, alt: '건포도와 무화과, 짙은 호박색 위스키' },
   bourbon: { image: bourbonImage, alt: '오크통과 바닐라, 캐러멜을 곁들인 위스키' },
+};
+const SOJU_VISUALS = {
+  chamisul: { image: chamisulImage, alt: '참이슬 프레시 실제 제품 사진' },
+  chumchurum: { image: chumchurumImage, alt: '처음처럼 실제 제품 사진' },
+  jinro: { image: jinroImage, alt: '진로 실제 제품 사진' },
+  saero: { image: saeroImage, alt: '새로 실제 제품 사진' },
+};
+const MILITARY_VISUALS = {
+  army: { image: armyImage, alt: '육군 캐릭터' },
+  airforce: { image: airforceImage, alt: '공군 캐릭터' },
+  marines: { image: marinesImage, alt: '해병대 캐릭터' },
 };
 
 const $ = selector => document.querySelector(selector);
@@ -180,8 +198,7 @@ function nextBlocked() {
   if (slide.game === 'ox') {
     const round = game.rounds?.[slide.questionIndex];
     if (slide.view === 'intro') return !game.control && !oxQuestionsReady(state.oxQuestions);
-    if (slide.view === 'question') return !round || (game.control?.questionIndex === slide.questionIndex && !['closed', 'revealed'].includes(game.control.phase));
-    if (slide.view === 'reveal') return !round?.result || Date.now() + state.serverOffset < round.result.revealedAt + OX_REVEAL_DURATION;
+    if (['question', 'reveal'].includes(slide.view)) return !round?.result || Date.now() + state.serverOffset < round.result.revealedAt + OX_REVEAL_DURATION;
     if (slide.view === 'survivors') return Date.now() + state.serverOffset < oxSurvivorRevealEnd(round);
   }
   if (slide.view === 'vote' && !game.result) return true;
@@ -226,11 +243,11 @@ function oxControls(slide, disabled) {
   const round = game.rounds?.[slide.questionIndex];
   const current = game.control?.questionIndex === slide.questionIndex;
   let control = '';
-  if (slide.view === 'question' && current) {
+  if (['question', 'reveal'].includes(slide.view) && current) {
     if (game.control.phase === 'ready') control = button('응답 시작', 'ox-start', 'dark', disabled);
     if (game.control.phase === 'open') control = button('응답 마감', 'ox-close', 'dark', disabled);
+    if (game.control.phase === 'closed') control = button('정답 공개', 'ox-reveal', 'dark', disabled);
   }
-  if (slide.view === 'reveal' && current && game.control.phase === 'closed') control = button('정답 공개', 'ox-reveal', 'dark', disabled);
   if (slide.view === 'survivors' && round?.result && round.result.survivorsRevealedAt == null) control = button('결과 공개', 'ox-survivors', 'dark', disabled);
   return `<section class="remote-game-controls" aria-label="OX 진행">${control}${round ? `<p class="remote-vote-count">${Object.keys(round.votes ?? {}).length} / ${Object.keys(round.eligible ?? {}).length}명 응답</p>` : ''}</section>`;
 }
@@ -279,8 +296,11 @@ function tastePresentation(slide) {
     return `<section class="taste-screen taste-ballot-screen" data-game="${escape(slide.game)}" style="--answer-delay:-${answerElapsed}ms">
       <div class="whisky-options">${Object.entries(game.options ?? {}).sort(([, a], [, b]) => a.order - b.order).map(([id, option]) => {
         const visual = Object.hasOwn(WHISKY_VISUALS, id) ? WHISKY_VISUALS[id] : null;
+        const sojuVisual = Object.hasOwn(SOJU_VISUALS, id) ? SOJU_VISUALS[id] : null;
+        const militaryVisual = Object.hasOwn(MILITARY_VISUALS, id) ? MILITARY_VISUALS[id] : null;
         const illustration = visual ? `<img class="whisky-image" src="${visual.image}" alt="${escape(visual.alt)}" draggable="false"/>`
-          : slide.game === 'soju' ? '<div class="soju-bottle" aria-hidden="true"></div>' : '';
+          : sojuVisual ? `<div class="soju-product-visual"><img class="soju-product-image" src="${sojuVisual.image}" alt="${escape(sojuVisual.alt)}" draggable="false"/></div>`
+          : militaryVisual ? `<div class="military-visual"><img class="military-image" src="${militaryVisual.image}" alt="${escape(militaryVisual.alt)}" draggable="false"/></div>` : '';
         const winner = answerRevealed && topIds[id];
         const answerClass = answerRevealed ? (winner ? 'is-answer' : 'is-dimmed') : '';
         return `<article class="whisky-option ${answerClass}" data-option="${escape(id)}">${illustration}${winner ? `<span class="whisky-answer-label">${tied ? '공동 정답' : '정답'}</span>` : ''}<h2>${escape(option.label)}</h2>${winner ? `<p class="whisky-vote-count"><strong>${game.outcome?.counts?.[id] ?? 0}</strong>표</p>` : ''}</article>`;
@@ -318,17 +338,14 @@ function oxPresentation(slide) {
   if (slide.view === 'score') return scorePresentation(state.oxGame.control?.roundId);
   const round = state.oxGame.rounds?.[slide.questionIndex];
   if (slide.view === 'survivors') return oxSurvivorsPresentation(round);
-  const result = slide.view === 'reveal' ? round?.result : null;
+  const result = round?.result;
   const elapsed = result ? Math.max(0, Date.now() + state.serverOffset - result.revealedAt) : 0;
   const current = state.oxGame.control?.questionIndex === slide.questionIndex;
   return `<section class="taste-screen ox-screen ${result ? 'is-revealed' : ''}" style="--ox-delay:-${elapsed}ms">
     <header class="ox-heading"><span>OX QUIZ</span><span>${String(slide.questionIndex + 1).padStart(2, '0')} / 05</span></header>
     <h1 class="ox-prompt ${(round?.prompt.length ?? 0) > 100 ? 'is-long' : ''}">${escape(round?.prompt ?? '')}</h1>
     <div class="ox-symbols" aria-label="${result ? `정답 ${result.answer}` : 'O 또는 X'}">${['O', 'X'].map(answer => `<div class="ox-symbol ${result ? result.answer === answer ? 'is-correct' : 'is-wrong' : ''}" data-answer="${answer}">${answer}</div>`).join('')}</div>
-    ${result ? `<div class="ox-survivors">${TEAM_IDS.map(team => {
-      const survivors = Object.keys(result.survivors ?? {}).filter(id => state.oxGame.roster[id]?.team === team).length;
-      return `<div data-team="${team}"><span>${TEAM_NAMES[team]}</span><strong>${survivors}<small>명 생존</small></strong></div>`;
-    }).join('')}</div>` : `<p class="ox-status">${slide.view === 'reveal' ? '정답 공개를 기다려주세요' : current && state.oxGame.control?.phase === 'open' ? '휴대폰에서 O 또는 X를 선택해주세요' : current && state.oxGame.control?.phase === 'ready' ? '응답을 준비하고 있습니다' : '응답이 마감되었습니다'}</p>`}
+    <p class="ox-status">${result ? '' : current && state.oxGame.control?.phase === 'open' ? '휴대폰에서 O 또는 X를 선택해주세요' : current && state.oxGame.control?.phase === 'ready' ? '응답을 준비하고 있습니다' : '응답이 마감되었습니다'}</p>
   </section>`;
 }
 
@@ -480,7 +497,7 @@ function render() {
   clearTimeout(revealTimer);
   const { slide, game } = tasteContext(state.slideIndex);
   const result = slide.game === 'ox' ? game.rounds?.[slide.questionIndex]?.result : game.result;
-  if (state.presenting && slide.view === 'reveal' && result) {
+  if (state.presenting && result && (slide.view === 'reveal' || (slide.game === 'ox' && slide.view === 'question'))) {
     const duration = slide.game === 'ox' ? OX_REVEAL_DURATION : Object.keys(result.order ?? {}).length * REVEAL_INTERVAL + 450;
     const remaining = result.revealedAt + duration - Date.now() - state.serverOffset;
     if (remaining > 0) revealTimer = setTimeout(schedule, remaining + 20);
@@ -690,8 +707,9 @@ async function action(name, errorId) {
 
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
-  document.querySelectorAll('[data-vote]').forEach(control => control.addEventListener('click', () => { void voteTaste(control.dataset.vote); }));
-  document.querySelectorAll('[data-ox-vote]').forEach(control => control.addEventListener('click', () => { void voteOx(control.dataset.oxVote); }));
+  // Pointer votes are submitted on release. Keep click activation for keyboards and assistive technology.
+  document.querySelectorAll('[data-vote]').forEach(control => control.addEventListener('click', event => { if (event.detail === 0) void voteTaste(control.dataset.vote); }));
+  document.querySelectorAll('[data-ox-vote]').forEach(control => control.addEventListener('click', event => { if (event.detail === 0) void voteOx(control.dataset.oxVote); }));
   document.querySelectorAll('[data-ox-question], [data-ox-answer]').forEach(control => control.addEventListener('input', () => {
     const index = control.dataset.oxQuestion ?? control.dataset.oxAnswer;
     const questions = state.oxDraft ?? state.oxQuestions ?? emptyOxQuestions();
@@ -884,23 +902,42 @@ function attachManager(device) {
   }
 }
 
+function currentVoteKey() {
+  const { key, slide, game } = tasteContext();
+  return JSON.stringify([state.participantId, key, game.control?.roundId, game.control?.phase, slide?.questionIndex, state.presentation?.resetAt]);
+}
+
 document.addEventListener('pointerdown', event => {
-  if (!interactionLocked() || state.role === 'participant') return;
+  if (!interactionLocked()) return;
   if (!event.isPrimary) {
     if (pointerGesture) pointerGesture.moved = true;
     suppressClickUntil = performance.now() + 400;
     return;
   }
+  const voteControl = event.target instanceof Element ? event.target.closest('button[data-vote], button[data-ox-vote]') : null;
+  if (state.role === 'participant' && !voteControl) return;
+  if (voteControl && (voteControl.disabled || event.button !== 0)) return;
   suppressClickUntil = 0;
-  pointerGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+  pointerGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, voteControl, voteKey: voteControl ? currentVoteKey() : null };
 }, true);
 document.addEventListener('pointermove', event => {
   if (pointerGesture?.id === event.pointerId && Math.hypot(event.clientX - pointerGesture.x, event.clientY - pointerGesture.y) > 12) pointerGesture.moved = true;
 }, true);
 document.addEventListener('pointerup', event => {
   if (pointerGesture?.id !== event.pointerId) return;
-  if (pointerGesture.moved) suppressClickUntil = performance.now() + 400;
+  const gesture = pointerGesture;
+  const moved = gesture.moved || Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 12;
+  if (moved) suppressClickUntil = performance.now() + 400;
   pointerGesture = null;
+  const control = gesture.voteControl;
+  if (control?.isConnected && !control.disabled && !moved && gesture.voteKey === currentVoteKey()) {
+    const bounds = control.getBoundingClientRect();
+    if (event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom) {
+      if (event.cancelable) event.preventDefault();
+      if (control.dataset.oxVote !== undefined) void voteOx(control.dataset.oxVote);
+      else void voteTaste(control.dataset.vote);
+    }
+  }
   schedule();
 }, true);
 function cancelPointerGesture() {

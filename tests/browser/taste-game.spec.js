@@ -139,6 +139,8 @@ test('whisky, soju and military votes, reveals and cumulative scores survive rev
     await next();
     await expect(host.locator('.presentation-screen-code')).toHaveText('8');
     await expect(host.locator('.whisky-option h2')).toHaveText(['참이슬', '처음처럼', '진로', '새로']);
+    await expect(host.locator('.soju-product-image')).toHaveCount(4);
+    await expect.poll(() => host.locator('.soju-product-image').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true);
     await expect(host.locator('.taste-eyebrow, .taste-screen h1')).toHaveCount(0);
     await expect(alice.locator('.taste-mobile')).toHaveText('대기 중');
     await remote.getByRole('button', { name: '투표 시작', exact: true }).click();
@@ -162,6 +164,12 @@ test('whisky, soju and military votes, reveals and cumulative scores survive rev
     await remote.getByRole('button', { name: '정답 공개', exact: true }).click();
     await expect(host.locator('.whisky-option.is-answer h2')).toHaveText('참이슬');
     await expect(host.locator('.whisky-vote-count')).toHaveText('2표');
+    await expect.poll(() => host.locator('.whisky-option.is-answer').evaluate(card => {
+      const image = card.querySelector('.soju-product-visual').getBoundingClientRect();
+      const title = card.querySelector('h2').getBoundingClientRect();
+      return image.bottom <= title.top;
+    })).toBe(true);
+    await host.screenshot({ path: '.cache/screenshots/soju-08-answer.png' });
     await expect(host.locator('.whisky-option.is-answer')).toHaveCSS('animation-name', 'none');
     await expect(host.locator('.whisky-vote-count')).toHaveCSS('opacity', '1');
     await host.emulateMedia({ reducedMotion: 'no-preference' });
@@ -195,7 +203,10 @@ test('whisky, soju and military votes, reveals and cumulative scores survive rev
     await next();
     await expect(host.locator('.presentation-screen-code')).toHaveText('11');
     await expect(host.locator('.whisky-option h2')).toHaveText(['육군', '공군', '해병대']);
-    await expect(host.locator('.soju-bottle, .whisky-image')).toHaveCount(0);
+    await expect(host.locator('.soju-product-image, .whisky-image')).toHaveCount(0);
+    await expect(host.locator('.military-image')).toHaveCount(3);
+    await expect.poll(() => host.locator('.military-image').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true);
+    await host.screenshot({ path: '.cache/screenshots/military-11-vote.png' });
     await expect(remote.getByRole('button', { name: '다음 화면' })).toBeDisabled();
     await remote.getByRole('button', { name: '투표 시작', exact: true }).click();
     await expect(alice.getByRole('button')).toHaveText(['육군', '공군', '해병대']);
@@ -218,6 +229,13 @@ test('whisky, soju and military votes, reveals and cumulative scores survive rev
     await host.reload();
     await expect(host.locator('.whisky-option.is-answer h2')).toHaveText('육군');
     await expect(host.locator('.whisky-vote-count')).toHaveText('2표');
+    await expect(host.locator('.whisky-vote-count')).toHaveCSS('opacity', '1');
+    await expect.poll(() => host.locator('.whisky-option.is-answer').evaluate(card => {
+      const image = card.querySelector('.military-visual').getBoundingClientRect();
+      const title = card.querySelector('h2').getBoundingClientRect();
+      return image.bottom <= title.top;
+    })).toBe(true);
+    await host.screenshot({ path: '.cache/screenshots/military-11-answer.png' });
     await next();
     await expect(host.locator('.presentation-screen-code')).toHaveText('12');
     await expect(host.locator('.reveal-person.is-correct')).toHaveCount(0);

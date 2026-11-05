@@ -1,11 +1,12 @@
 import { test } from 'node:test';
+import './vote-input.test.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { rosterFromInputs, rowsFromParticipants, readRosterDraft, TEAM_NAMES, STAGES, nameKey, messageText, onlineParticipants, participantUrl, friendlyError, firstTouch, touchRoundIsActive, touchRoundResult, stageIndex, TOUCH_TITLE, TOUCH_BODY } from '../src/event-model.js';
 import { WHISKY_OPTIONS, SOJU_OPTIONS, MILITARY_OPTIONS, TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward, rankedTeams, revealFinished, REVEAL_INTERVAL } from '../src/taste-model.js';
 import { emptyOxQuestions, oxQuestionsReady, oxSurvivors, oxPoints, oxEliminatedIds, oxSurvivorRevealEnd } from '../src/ox-model.js';
 
-test('OX has five empty questions and alternating question/reveal screens', () => {
+test('OX reveals answers on question screens and keeps legacy stage indices compatible', () => {
   const empty = emptyOxQuestions();
   assert.equal(Object.keys(empty).length, 5);
   assert.ok(Object.values(empty).every(question => question.text === '' && question.answer === ''));
@@ -22,10 +23,16 @@ test('OX has five empty questions and alternating question/reveal screens', () =
     order.push(STAGES[index].view);
     if (stageIndex(index, 1) === index) break;
   }
-  assert.deepEqual(order, ['intro', ...Array.from({ length: 5 }, () => ['question', 'reveal', 'survivors']).flat(), 'score']);
+  assert.deepEqual(order, ['intro', ...Array.from({ length: 5 }, () => ['question', 'survivors']).flat(), 'score']);
   assert.equal(STAGES[23].id, 'ox-score');
   assert.equal(stageIndex(23, -1), 28);
-  assert.equal(stageIndex(24, -1), 14);
+  assert.equal(stageIndex(24, -1), 13);
+  for (const [index, stage] of STAGES.entries()) {
+    if (stage.game === 'ox' && stage.view === 'reveal') {
+      assert.equal(stageIndex(index, 1), stageIndex(index - 1, 1));
+      assert.equal(stageIndex(index, -1), stageIndex(index - 1, -1));
+    }
+  }
 });
 
 test('OX survivor reveal dims only this question’s eliminations and persists its completion time', () => {

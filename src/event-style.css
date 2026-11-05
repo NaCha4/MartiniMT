@@ -616,6 +616,9 @@ dialog textarea { resize: vertical; }
 .whisky-option[data-option="airforce"] { --whisky-color: #7eb9e6; }
 .whisky-option[data-option="marines"] { --whisky-color: #d67d75; }
 .taste-ballot-screen[data-game="military"] .whisky-option { background: radial-gradient(ellipse at 50% 20%, color-mix(in srgb, var(--whisky-color) 45%, transparent), transparent 75%), var(--color-panel); }
+.military-visual { position: absolute; inset: 5% 8% 25%; overflow: hidden; border-radius: 10px; transition: bottom .6s ease; }
+.military-image { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.whisky-option.is-answer .military-visual { bottom: 40%; }
 .whisky-option h2 { margin: 0; padding-top: 16px; border-top: 2px solid var(--whisky-color); color: #f7f3ed; font-size: clamp(28px, 3.5vw, 65px); font-weight: 600; }
 .whisky-option.is-dimmed { filter: brightness(.3) saturate(.3); opacity: .55; animation: answer-dim 850ms ease both; animation-delay: var(--answer-delay, 0ms); }
 .whisky-option.is-answer { --answer-count-size: clamp(44px, 5.5vw, 100px); border-color: var(--color-accent); box-shadow: 0 0 28px rgb(221 189 132 / 24%); animation: answer-focus 1200ms cubic-bezier(.22, 1, .36, 1) both; animation-delay: var(--answer-delay, 0ms); }
@@ -653,9 +656,16 @@ dialog textarea { resize: vertical; }
 }
 .taste-ballot-footer { display: grid; place-items: center; min-height: 56px; }
 .taste-ballot-footer .button { min-width: 200px; font-size: clamp(18px, 1.5vw, 28px); }
-.soju-bottle { position: absolute; inset: 24% auto auto 50%; width: 7vw; height: 23vh; transform: translateX(-50%); border: 1px solid #8bd6aa; border-radius: 24% 24% 12% 12%; background: linear-gradient(90deg, #315b48, #78b393 45%, #284b3c); box-shadow: 0 0 50px #68bf8033; }
-.soju-bottle::before { content: ''; position: absolute; bottom: 100%; left: 32%; width: 36%; height: 7vh; border-radius: 6px 6px 0 0; background: #81b497; border-top: 1vh solid #d8e0d5; }
-.soju-bottle::after { content: ''; position: absolute; top: 35%; left: 9%; right: 9%; height: 37%; border-radius: 5px; background: #f1eee6; }
+.taste-ballot-screen[data-game="soju"] .whisky-option { --whisky-color: #8dbf9c; background: radial-gradient(ellipse at 50% 25%, #294337, #151b18 70%); }
+.taste-ballot-screen[data-game="soju"] .whisky-option[data-option="jinro"] { --whisky-color: #8ebfe4; background: radial-gradient(ellipse at 50% 25%, #203e53, #151a20 70%); }
+.taste-ballot-screen[data-game="soju"] .whisky-option[data-option="saero"] { --whisky-color: #b4d9d0; background: radial-gradient(ellipse at 50% 25%, #314a49, #151e1f 70%); }
+.soju-product-visual { position: absolute; inset: 5% 8% 25%; overflow: hidden; border: 1px solid rgb(255 255 255 / 25%); border-radius: 10px; background: radial-gradient(ellipse at 50% 35%, #fff, #e1e2db); transition: bottom .6s ease; }
+.whisky-option.is-answer .soju-product-visual { bottom: 40%; }
+.soju-product-image { display: block; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: multiply; pointer-events: none; }
+.whisky-option[data-option="chamisul"] .soju-product-image { position: absolute; top: 9%; height: 82%; object-fit: contain; }
+.whisky-option[data-option="chumchurum"] .soju-product-image { transform: scale(1.13); }
+.whisky-option[data-option="jinro"] .soju-product-image { position: absolute; top: 50%; left: 50%; width: auto; max-width: none; height: 155%; transform: translate(-61%, -52%); }
+.whisky-option[data-option="saero"] .soju-product-image { transform: scale(1.09); }
 .taste-phase { margin: 0; color: var(--color-text-secondary); font-size: clamp(16px, 1.5vw, 28px); }
 .taste-phase[data-phase$="open"] { color: var(--color-accent); }
 .taste-reveal { display: flex; flex-direction: column; }
@@ -724,25 +734,16 @@ dialog textarea { resize: vertical; }
 .ox-symbol.is-correct { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-highlight); animation: ox-answer 800ms cubic-bezier(.22, 1, .36, 1) both; animation-delay: var(--ox-delay); }
 .ox-symbol.is-wrong { opacity: .15; animation: ox-fade 700ms ease both; animation-delay: var(--ox-delay); }
 .ox-status { text-align: center; color: var(--color-text-secondary); font-size: clamp(16px, 1.6vw, 28px); margin: 0; min-height: 7vh; }
-.ox-survivors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2vw; animation: ox-survivors 1000ms ease both; animation-delay: var(--ox-delay); }
-.ox-survivors > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; border-top: 2px solid var(--signal-color); padding-top: 1.4vh; font-size: clamp(18px, 2vw, 36px); }
-.ox-survivors [data-team="A"] { --signal-color: #49e1ff; }
-.ox-survivors [data-team="B"] { --signal-color: #ff71c8; }
-.ox-survivors [data-team="C"] { --signal-color: #b5f571; }
-.ox-survivors [data-team="D"] { --signal-color: #a897ff; }
-.ox-survivors strong { color: var(--signal-color); }
-.ox-survivors small { font-size: .45em; margin-left: 6px; }
 .ox-mobile .mobile-vote-options button { border-radius: 0; font-size: clamp(80px, 22vh, 180px); }
 @keyframes ox-answer { from { transform: translateY(24px); opacity: .3; } to { transform: translateY(0); opacity: 1; } }
 @keyframes ox-fade { from { opacity: 1; } to { opacity: .15; } }
-@keyframes ox-survivors { 0%, 35% { opacity: 0; transform: translateY(16px); } 100% { opacity: 1; transform: translateY(0); } }
 @media (max-width: 640px) {
   .ox-question-field { grid-template-columns: 1fr 90px; }
   .ox-question-field label:first-child { grid-column: 1 / -1; }
   .ox-question-field textarea { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ox-symbol.is-correct, .ox-symbol.is-wrong, .ox-survivors { animation: none; }
+  .ox-symbol.is-correct, .ox-symbol.is-wrong { animation: none; }
 }
 .taste-mobile p { margin: 0; font-size: 20px; color: var(--color-text-secondary); }
 .taste-mobile.is-voting { gap: 0; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }

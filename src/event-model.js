@@ -37,8 +37,8 @@ export const STAGES = [
 ];
 // Append new stages so stored slide indices and existing screen codes stay valid.
 const presentationOrder = STAGES.flatMap((stage, index) => {
-  if (stage.view === 'survivors') return [];
-  if (stage.game === 'ox' && stage.view === 'reveal') return [index, STAGES.findIndex(candidate => candidate.view === 'survivors' && candidate.questionIndex === stage.questionIndex)];
+  if (stage.view === 'survivors' || (stage.game === 'ox' && stage.view === 'reveal')) return [];
+  if (stage.game === 'ox' && stage.view === 'question') return [index, STAGES.findIndex(candidate => candidate.view === 'survivors' && candidate.questionIndex === stage.questionIndex)];
   return [index];
 });
 export function participantUrl(href, room, networkUrl) {
@@ -54,7 +54,12 @@ export function participantUrl(href, room, networkUrl) {
   return url.href;
 }
 export function stageIndex(index, direction) {
-  const position = presentationOrder.indexOf(index);
+  const stage = STAGES[index];
+  // Older sessions may still point at a separate OX answer stage.
+  const current = stage?.game === 'ox' && stage.view === 'reveal'
+    ? STAGES.findIndex(candidate => candidate.game === 'ox' && candidate.view === 'question' && candidate.questionIndex === stage.questionIndex)
+    : index;
+  const position = presentationOrder.indexOf(current);
   return presentationOrder[Math.max(0, Math.min(presentationOrder.length - 1, position + direction))];
 }
 export function instructionIsCurrent(instruction, stage) { return stage.step === 'join' && Number(instruction?.createdAt) >= Number(stage.updatedAt); }

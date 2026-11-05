@@ -77,11 +77,14 @@ test('OX runs five elimination rounds, awards survivors once, and resets progres
         await host.screenshot({ path: '.cache/screenshots/ox-question.png' });
       }
       await remote.getByRole('button', { name: '응답 마감', exact: true }).click();
-      await next();
-      await expect(host.locator('.presentation-screen-code')).toHaveText(String(16 + index * 2));
+      await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(15 + index * 2));
       await remote.getByRole('button', { name: '정답 공개', exact: true }).click();
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(15 + index * 2));
       await expect(host.locator('.ox-symbol.is-correct')).toHaveText(answer);
       await expect(host.locator('.ox-symbol.is-correct')).toHaveCSS('animation-name', 'ox-answer');
+      await expect(host.locator('.ox-survivors')).toHaveCount(0);
+      await expect(host.locator('.ox-screen')).not.toContainText('명 생존');
       await expect(alice.locator('.ox-mobile h1')).toHaveText('정답입니다');
       if (index === 0) {
         await expect(anna.locator('.ox-mobile h1')).toHaveText('탈락');
@@ -92,6 +95,14 @@ test('OX runs five elimination rounds, awards survivors once, and resets progres
       }
       await next();
       await expect(host.locator('.presentation-screen-code')).toHaveText(String(26 + index));
+      if (index === 0) {
+        await remote.getByRole('button', { name: '이전 화면', exact: true }).click();
+        await expect(host.locator('.presentation-screen-code')).toHaveText('15');
+        await expect(host.locator('.ox-symbol.is-correct')).toHaveText(answer);
+        await expect(remote.getByRole('button', { name: '정답 공개', exact: true })).toHaveCount(0);
+        await next();
+        await expect(host.locator('.presentation-screen-code')).toHaveText('26');
+      }
       await expect(host.locator('.ox-survivor-screen .reveal-person')).toHaveCount(4);
       await expect(host.locator('.ox-survivor-screen .is-alive')).toHaveCount(index === 0 ? 4 : index <= 2 ? 2 : 1);
       await expect(host.locator('.ox-survivor-screen .is-eliminated-now')).toHaveCount(0);
@@ -144,7 +155,6 @@ test('OX runs five elimination rounds, awards survivors once, and resets progres
     for (let index = 0; index < 5; index++) {
       await remote.getByRole('button', { name: '응답 시작', exact: true }).click();
       await remote.getByRole('button', { name: '응답 마감', exact: true }).click();
-      await next();
       await remote.getByRole('button', { name: '정답 공개', exact: true }).click();
       await next();
       await expect(host.locator('.presentation-screen-code')).toHaveText(String(26 + index));
