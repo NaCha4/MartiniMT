@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import './vote-input.test.js';
+import './subscription-group.test.js';
+import './app-lifecycle.test.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { rosterFromInputs, rowsFromParticipants, readRosterDraft, TEAM_NAMES, STAGES, nameKey, messageText, onlineParticipants, participantUrl, friendlyError, firstTouch, touchRoundIsActive, touchRoundResult, stageIndex, TOUCH_TITLE, TOUCH_BODY } from '../src/event-model.js';

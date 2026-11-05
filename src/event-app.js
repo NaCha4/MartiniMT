@@ -5,6 +5,8 @@ import * as api from './event-data.js';
 import { TEAM_IDS, TEAM_NAMES, STAGES, stageIndex, touchRoundIsActive, touchRoundResult, firstTouch, rosterFromInputs, rowsFromParticipants, readRosterDraft, onlineParticipants, participantUrl, friendlyError } from './event-model.js';
 import { TASTE_ROUNDS, REVEAL_INTERVAL, rankedTeams, revealFinished } from './taste-model.js';
 import { OX_QUESTION_COUNT, OX_REVEAL_DURATION, emptyOxQuestions, oxQuestionsReady, oxEliminatedIds, oxSurvivorRevealEnd } from './ox-model.js';
+import { createInputController } from './input-controller.js';
+import { createSubscriptionGroup } from './subscription-group.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
@@ -60,14 +62,24 @@ const state = {
   voting: false, serverOffset: 0, scoreEntryAt: 0,
   oxGame: {}, oxRound: {}, oxReady: false, oxQuestions: null, oxDraft: null,
 };
-let participantStops = [], presenceClose, presenceEpoch = 0, frame, composing = false;
+let presenceClose, presenceEpoch = 0, frame, composing = false;
 let rosterSaveTimer, rosterSavePromise;
-let managerSaveTimer, managerSavePromise, managementStops = [];
-let controlsUnlockTimer, pointerGesture, suppressedVoteControl, suppressClickUntil = 0, scriptPosition;
+let managerSaveTimer, managerSavePromise;
+let controlsUnlockTimer, scriptPosition;
 let revealTimer, scoreFrame;
-let tasteStops = [], tasteWatchKey;
+let gameWatchKey;
+const watchRoom = (path, onValue, onError) => api.watch(state.room, path, onValue, onError);
+const participantSubscriptions = createSubscriptionGroup(watchRoom);
+const managementSubscriptions = createSubscriptionGroup(watchRoom);
+const gameSubscriptions = createSubscriptionGroup(watchRoom);
+const input = createInputController({
+  document, window,
+  getContext: () => ({ interactive: interactionLocked(), participant: state.role === 'participant', voteKey: currentVoteKey() }),
+  submitVote: (kind, value) => { if (kind === 'ox') void voteOx(value); else void voteTaste(value); },
+  onChange: schedule,
+});
 
-function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = null; if (!composing && !pointerGesture) render(); }); }
+function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = null; if (!composing && !input.active) render(); }); }
 function relayOperatorError(message) {
   if (state.role === 'host' && state.presenting && state.room) {
     // Keep the original local error if its delivery also fails.
@@ -343,7 +355,7 @@ function oxPresentation(slide) {
   const current = state.oxGame.control?.questionIndex === slide.questionIndex;
   return `<section class="taste-screen ox-screen ${result ? 'is-revealed' : ''}" style="--ox-delay:-${elapsed}ms">
     <header class="ox-heading"><span>OX QUIZ</span><span>${String(slide.questionIndex + 1).padStart(2, '0')} / 05</span></header>
-    <h1 class="ox-prompt ${(round?.prompt.length ?? 0) > 100 ? 'is-long' : ''}">${escape(round?.prompt ?? '')}</h1>
+    <h1 class="ox-prompt ${(round?.prompt?.length ?? 0) > 100 ? 'is-long' : ''}">${escape(round?.prompt ?? '')}</h1>
     <div class="ox-symbols" aria-label="${result ? `정답 ${result.answer}` : 'O 또는 X'}">${['O', 'X'].map(answer => `<div class="ox-symbol ${result ? result.answer === answer ? 'is-correct' : 'is-wrong' : ''}" data-answer="${answer}">${answer}</div>`).join('')}</div>
     <p class="ox-status">${result ? '' : current && state.oxGame.control?.phase === 'open' ? '휴대폰에서 O 또는 X를 선택해주세요' : current && state.oxGame.control?.phase === 'ready' ? '응답을 준비하고 있습니다' : '응답이 마감되었습니다'}</p>
   </section>`;
@@ -428,7 +440,7 @@ function presentationView() {
       <div class="race-copy">${message}</div>
     </section>`;
   }
-  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main">${content}</main>${resetControl}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
+  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${resetControl}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
 }
 
 function participantTasteView() {
@@ -708,12 +720,7 @@ async function action(name, errorId) {
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
   for (const control of document.querySelectorAll('[data-vote], [data-ox-vote]')) {
-    const voteKey = currentVoteKey();
-    control.addEventListener('click', event => {
-      // A handled pointer release must not submit again through its compatibility click.
-      if (event.detail > 0 && control === suppressedVoteControl) { suppressedVoteControl = null; return; }
-      activateVote(control, voteKey);
-    });
+    input.bindVote(control);
   }
   document.querySelectorAll('[data-ox-question], [data-ox-answer]').forEach(control => control.addEventListener('input', () => {
     const index = control.dataset.oxQuestion ?? control.dataset.oxAnswer;
@@ -795,45 +802,47 @@ async function syncPresence() {
   catch (error) { if (epoch === presenceEpoch) showError(error); }
 }
 function attachParticipant(id) {
-  participantStops.forEach(stop => stop()); participantStops = []; state.participantId = id;
+  participantSubscriptions.clear(); state.participantId = id;
   state.participant = null; state.instruction = null; state.response = null; state.responseReady = false; state.submittedRoundId = null;
   state.tasteGames = {}; state.tasteVotes = {};
   state.oxGame = {}; state.oxRound = {}; state.oxReady = false;
-  if (!id) { watchActiveTaste(); presenceEpoch++; presenceClose?.().catch(() => {}); presenceClose = null; state.participant = null; state.instruction = null; state.response = null; schedule(); return; }
-  participantStops.push(api.watch(state.room, `participants/${id}`, person => { state.participant = person; void syncPresence(); schedule(); }, showError));
-  participantStops.push(api.watch(state.room, `instructions/${id}`, instruction => { state.instruction = instruction; schedule(); }, showError));
-  participantStops.push(api.watch(state.room, `responses/${id}`, response => { state.response = response; state.responseReady = true; schedule(); }, showError));
-  watchActiveTaste();
+  if (!id) { watchActiveGame(); presenceEpoch++; presenceClose?.().catch(() => {}); presenceClose = null; state.participant = null; state.instruction = null; state.response = null; schedule(); return; }
+  participantSubscriptions.watch(`participants/${id}`, person => { state.participant = person; void syncPresence(); schedule(); }, showError);
+  participantSubscriptions.watch(`instructions/${id}`, instruction => { state.instruction = instruction; schedule(); }, showError);
+  participantSubscriptions.watch(`responses/${id}`, response => { state.response = response; state.responseReady = true; schedule(); }, showError);
+  watchActiveGame();
 }
 
-function watchActiveTaste() {
+function watchActiveGame() {
   const { key, slide } = tasteContext();
   const questionIndex = slide?.questionIndex ?? (slide?.view === 'score' ? OX_QUESTION_COUNT - 1 : 0);
   const watchKey = `${state.role}:${state.participantId ?? ''}:${key}:${key === 'ox' ? questionIndex : ''}`;
-  if (watchKey === tasteWatchKey) return;
-  tasteStops.forEach(stop => stop()); tasteStops = []; tasteWatchKey = null;
+  if (watchKey === gameWatchKey) return;
+  gameSubscriptions.clear(); gameWatchKey = null;
   if (!state.uid || !state.room || (state.role === 'participant' && !state.participantId)) return;
-  tasteWatchKey = watchKey;
+  gameWatchKey = watchKey;
   if (key === 'ox') {
     if (state.role === 'participant') {
-      state.oxRound = {}; state.oxReady = false;
+      const round = {};
+      state.oxRound = round; state.oxReady = false;
       const ready = new Set();
-      tasteStops.push(api.watch(state.room, 'oxGame/control', value => { state.oxGame.control = value; schedule(); }, showError));
+      gameSubscriptions.watch('oxGame/control', value => { state.oxGame.control = value; schedule(); }, showError);
       for (const [field, path] of Object.entries({ eligible: `eligible/${state.participantId}`, vote: `votes/${state.participantId}`, result: 'result' })) {
-        tasteStops.push(api.watch(state.room, `oxGame/rounds/${questionIndex}/${path}`, value => {
-          state.oxRound[field] = value; ready.add(field); state.oxReady = ready.size === 3; schedule();
-        }, showError));
+        gameSubscriptions.watch(`oxGame/rounds/${questionIndex}/${path}`, value => {
+          round[field] = value; ready.add(field); state.oxReady = ready.size === 3; schedule();
+        }, showError);
       }
-    } else tasteStops.push(api.watch(state.room, 'oxGame', value => { state.oxGame = value ?? {}; schedule(); }, showGameError));
+    } else gameSubscriptions.watch('oxGame', value => { state.oxGame = value ?? {}; schedule(); }, showGameError);
     return;
   }
   const { path } = TASTE_ROUNDS[key];
   if (state.role === 'participant') {
-    state.tasteGames[key] ??= {}; state.tasteVotes[key] ??= {};
-    for (const field of ['control', 'options']) tasteStops.push(api.watch(state.room, `${path}/${field}`, value => { state.tasteGames[key][field] = value; schedule(); }, showError));
-    for (const kind of ['preference', 'prediction']) tasteStops.push(api.watch(state.room, `${path}/${kind}Votes/${state.participantId}`, value => { state.tasteVotes[key][kind] = value; state.tasteVotes[key][`${kind}Ready`] = true; schedule(); }, showError));
+    const game = {}, votes = {};
+    state.tasteGames[key] = game; state.tasteVotes[key] = votes;
+    for (const field of ['control', 'options']) gameSubscriptions.watch(`${path}/${field}`, value => { game[field] = value; schedule(); }, showError);
+    for (const kind of ['preference', 'prediction']) gameSubscriptions.watch(`${path}/${kind}Votes/${state.participantId}`, value => { votes[kind] = value; votes[`${kind}Ready`] = true; schedule(); }, showError);
   } else {
-    tasteStops.push(api.watch(state.room, path, value => { state.tasteGames[key] = value ?? {}; state.gameError = ''; schedule(); }, showGameError));
+    gameSubscriptions.watch(path, value => { state.tasteGames[key] = value ?? {}; state.gameError = ''; schedule(); }, showGameError);
   }
 }
 
@@ -846,7 +855,7 @@ function syncPresentation(presentation) {
     state.tasteVotes = {};
     state.oxGame = {}; state.oxRound = {}; state.oxReady = false;
     state.teamScores = null;
-    tasteWatchKey = null;
+    gameWatchKey = null;
     state.operatorError = null;
     state.error = '';
     state.gameError = '';
@@ -863,13 +872,13 @@ function syncPresentation(presentation) {
     state.winner = person ? { id: presentation.winnerId, ...person } : null;
     chooseWinner();
   }
-  watchActiveTaste();
+  watchActiveGame();
   schedule();
 }
 
 function watchManagement() {
-  managementStops.forEach(stop => stop());
-  managementStops = [api.watch(state.room, 'participants', value => {
+  managementSubscriptions.clear();
+  managementSubscriptions.watch('participants', value => {
     state.participants = value ?? {};
     if (state.role === 'manager') state.rows = rowsFromParticipants(state.participants);
     else if (!state.dirty) {
@@ -881,13 +890,13 @@ function watchManagement() {
     }
     if (!state.ready) { state.ready = true; queueRosterSave(); queueManagerSave(); }
     syncPresentation(state.presentation);
-  }, showError)];
-  for (const key of ['bindings', 'presence']) managementStops.push(api.watch(state.room, key, value => { state[key] = value ?? {}; schedule(); }, showError));
-  watchActiveTaste();
-  managementStops.push(api.watch(state.room, 'teamScores', value => { state.teamScores = value; schedule(); }, showGameError));
-  managementStops.push(api.watch(state.room, 'operatorError', value => { state.operatorError = value; schedule(); }, showError));
-  managementStops.push(api.watch(state.room, 'oxQuestions', value => { state.oxQuestions = value; schedule(); }, showGameError));
-  if (state.role === 'host') managementStops.push(api.watch(state.room, 'responses', value => { state.responses = value ?? {}; chooseWinner(); schedule(); }, showError));
+  }, showError);
+  for (const key of ['bindings', 'presence']) managementSubscriptions.watch(key, value => { state[key] = value ?? {}; schedule(); }, showError);
+  watchActiveGame();
+  managementSubscriptions.watch('teamScores', value => { state.teamScores = value; schedule(); }, showGameError);
+  managementSubscriptions.watch('operatorError', value => { state.operatorError = value; schedule(); }, showError);
+  managementSubscriptions.watch('oxQuestions', value => { state.oxQuestions = value; schedule(); }, showGameError);
+  if (state.role === 'host') managementSubscriptions.watch('responses', value => { state.responses = value ?? {}; chooseWinner(); schedule(); }, showError);
 }
 
 function attachManager(device) {
@@ -899,10 +908,10 @@ function attachManager(device) {
     watchManagement();
     syncPresentation(state.presentation);
   } else if (state.role === 'manager') {
-    managementStops.forEach(stop => stop()); managementStops = [];
+    managementSubscriptions.clear();
     state.role = 'participant'; state.participants = {}; state.bindings = {}; state.presence = {};
     state.presenting = false; state.winner = null; state.error = ''; state.gameError = ''; state.operatorError = null; state.name = '';
-    watchActiveTaste();
+    watchActiveGame();
     schedule();
   }
 }
@@ -912,75 +921,6 @@ function currentVoteKey() {
   return JSON.stringify([state.participantId, key, game.control?.roundId, game.control?.phase, slide?.questionIndex, state.presentation?.resetAt]);
 }
 
-function insideVoteControl(control, x, y) {
-  const bounds = control.getBoundingClientRect();
-  return x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
-}
-
-function activateVote(control, voteKey) {
-  // Some browsers deliver click without a matching pointerup. Release the redraw lock too.
-  let gesture;
-  if (pointerGesture?.voteControl) {
-    gesture = pointerGesture;
-    pointerGesture = null;
-    schedule();
-  }
-  if (!control.isConnected || control.disabled || voteKey !== currentVoteKey()) return;
-  if (gesture && (gesture.moved || gesture.voteKey !== voteKey)) return;
-  if (control.dataset.oxVote !== undefined) void voteOx(control.dataset.oxVote);
-  else void voteTaste(control.dataset.vote);
-}
-
-document.addEventListener('pointerdown', event => {
-  if (!interactionLocked()) return;
-  if (!event.isPrimary) {
-    if (pointerGesture) pointerGesture.moved = true;
-    suppressClickUntil = performance.now() + 400;
-    return;
-  }
-  const voteControl = event.target instanceof Element ? event.target.closest('button[data-vote], button[data-ox-vote]') : null;
-  if (state.role === 'participant' && !voteControl) return;
-  if (voteControl && (voteControl.disabled || event.button !== 0)) return;
-  suppressedVoteControl = null;
-  suppressClickUntil = 0;
-  pointerGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, voteControl, voteKey: voteControl ? currentVoteKey() : null };
-}, true);
-document.addEventListener('pointermove', event => {
-  if (pointerGesture?.id !== event.pointerId) return;
-  if (pointerGesture.voteControl) {
-    if (!insideVoteControl(pointerGesture.voteControl, event.clientX, event.clientY)) pointerGesture.moved = true;
-  } else if (Math.hypot(event.clientX - pointerGesture.x, event.clientY - pointerGesture.y) > 12) pointerGesture.moved = true;
-}, true);
-document.addEventListener('pointerup', event => {
-  if (pointerGesture?.id !== event.pointerId) return;
-  const gesture = pointerGesture;
-  const control = gesture.voteControl;
-  const moved = gesture.moved || (!control && Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 12);
-  if (moved) suppressClickUntil = performance.now() + 400;
-  pointerGesture = null;
-  if (control) {
-    suppressedVoteControl = control;
-    if (!moved && insideVoteControl(control, event.clientX, event.clientY)) {
-      if (event.cancelable) event.preventDefault();
-      activateVote(control, gesture.voteKey);
-    }
-  }
-  schedule();
-}, true);
-function cancelPointerGesture() {
-  if (pointerGesture) suppressClickUntil = performance.now() + 400;
-  if (pointerGesture?.voteControl) suppressedVoteControl = pointerGesture.voteControl;
-  pointerGesture = null;
-  schedule();
-}
-document.addEventListener('pointercancel', cancelPointerGesture, true);
-window.addEventListener('blur', cancelPointerGesture);
-document.addEventListener('click', event => {
-  if (interactionLocked() && event.detail > 0 && performance.now() < suppressClickUntil) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }
-}, true);
 function preventViewportGesture(event) {
   if (interactionLocked() && event.cancelable) event.preventDefault();
 }

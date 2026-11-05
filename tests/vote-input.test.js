@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { createInputController } from '../src/input-controller.js';
 
 const source = readFileSync(new URL('../src/event-app.js', import.meta.url), 'utf8');
 
 function votingScreen(kind = 'taste') {
   const listeners = new Map(), windowListeners = new Map(), frames = [], votes = [];
-  let renders = 0;
+  let renders = 0, framePending = false, time = 1000;
   class Button {
     constructor() {
       this.dataset = kind === 'ox' ? { oxVote: 'O' } : { vote: 'peat' };
@@ -21,36 +22,42 @@ function votingScreen(kind = 'taste') {
   }
   const button = new Button();
   const state = { role: 'participant', participantId: 'A1', presentation: { resetAt: 1 }, questionIndex: 0, control: { roundId: 'round-one', phase: 'open' } };
-  const context = vm.createContext({
-    state, Element: Button, performance: { now: () => 1000 },
+  function schedule() {
+    if (framePending) return;
+    framePending = true;
+    frames.push(() => {
+      framePending = false;
+      if (!input.active) { renders++; button.isConnected = false; }
+    });
+  }
+  const input = createInputController({
     document: {
-      querySelectorAll(selector) { return selector === '[data-vote], [data-ox-vote]' || selector === (kind === 'ox' ? '[data-ox-vote]' : '[data-vote]') ? [button] : []; },
       addEventListener(name, handler) { listeners.set(name, handler); },
     },
     window: { addEventListener(name, handler) { windowListeners.set(name, handler); } },
-    $: () => null, interactionLocked: () => true,
-    tasteContext: () => ({ key: kind, slide: { questionIndex: state.questionIndex }, game: { control: state.control } }),
-    requestAnimationFrame(handler) { frames.push(handler); return frames.length; },
-    render() { renders++; button.isConnected = false; },
-    voteTaste(value) { votes.push(['taste', value]); },
-    voteOx(value) { votes.push(['ox', value]); },
+    getContext: () => ({
+      interactive: true, participant: true,
+      voteKey: JSON.stringify([state.participantId, kind, state.control.roundId, state.control.phase, state.questionIndex, state.presentation.resetAt]),
+    }),
+    submitVote(kind, value) { votes.push([kind, value]); },
+    onChange: schedule,
+    now: () => time,
   });
-  const gestureStart = source.includes('function currentVoteKey()') ? source.indexOf('function currentVoteKey()') : source.indexOf("document.addEventListener('pointerdown'");
-  vm.runInContext(
-    'let frame, pointerGesture, suppressedVoteControl, suppressClickUntil = 0, composing = false;\n'
-    + source.slice(source.indexOf('function schedule()'), source.indexOf('function relayOperatorError'))
-    + source.slice(source.indexOf('function bindEvents()'), source.indexOf('async function join('))
-    + source.slice(gestureStart, source.indexOf('function preventViewportGesture'))
-    + '\nbindEvents();', context,
-  );
+  input.bindVote(button);
   return {
     button, state, votes,
     pointer(type, overrides = {}) {
       const event = { target: button, pointerId: 1, isPrimary: true, pointerType: 'touch', button: 0, clientX: 50, clientY: 50, cancelable: true, preventDefault() {}, ...overrides };
       listeners.get(type)(event);
     },
-    click(detail = 1) { button.listeners.get('click')({ detail }); },
-    update() { context.schedule(); },
+    click(detail = 1) {
+      let stopped = false;
+      const event = { detail, target: button, preventDefault() {}, stopImmediatePropagation() { stopped = true; } };
+      listeners.get('click')(event);
+      if (!stopped) button.listeners.get('click')(event);
+    },
+    elapse(milliseconds) { time += milliseconds; },
+    update: schedule,
     flush() { frames.splice(0).forEach(handler => handler()); },
     blur() { windowListeners.get('blur')(); },
     get renders() { return renders; },
@@ -183,8 +190,21 @@ test('a cancelled compatibility click is ignored once and does not block a later
   screen.pointer('pointercancel');
   screen.click(1);
   assert.equal(screen.votes.length, 0);
+  screen.elapse(401);
   screen.click(1);
   assert.equal(screen.votes.length, 1);
+});
+
+test('an omitted compatibility click cannot suppress a later native-only vote', () => {
+  for (const finish of ['pointerup', 'pointercancel']) {
+    const screen = votingScreen('ox');
+    screen.pointer('pointerdown');
+    screen.pointer(finish);
+    const submitted = screen.votes.length;
+    screen.elapse(401);
+    screen.click(1);
+    assert.equal(screen.votes.length, submitted + 1);
+  }
 });
 
 test('OX voting buttons appear only after eligibility, prior vote and result have loaded', () => {
