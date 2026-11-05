@@ -63,7 +63,7 @@ const state = {
 let participantStops = [], presenceClose, presenceEpoch = 0, frame, composing = false;
 let rosterSaveTimer, rosterSavePromise;
 let managerSaveTimer, managerSavePromise, managementStops = [];
-let controlsUnlockTimer, pointerGesture, suppressClickUntil = 0, scriptPosition;
+let controlsUnlockTimer, pointerGesture, suppressedVoteControl, suppressClickUntil = 0, scriptPosition;
 let revealTimer, scoreFrame;
 let tasteStops = [], tasteWatchKey;
 
@@ -438,7 +438,7 @@ function participantTasteView() {
   const open = slide.view === 'vote' && (prediction || phase === 'preference-open');
   const vote = prediction ? votes.prediction : votes.preference;
   const ready = prediction ? votes.predictionReady : votes.preferenceReady;
-  if (open && !vote) return `<main class="controller-main taste-mobile is-voting" data-team="${state.participant.team}">${errorBanner()}
+  if (open && ready && !vote) return `<main class="controller-main taste-mobile is-voting" data-team="${state.participant.team}">${errorBanner()}
     <div class="mobile-vote-options" role="group" aria-label="${prediction ? '최다 득표 예상 투표' : '취향 투표'}" style="--vote-option-count:${Object.keys(game.options ?? {}).length}">${Object.entries(game.options ?? {}).sort(([, a], [, b]) => a.order - b.order).map(([id, option]) => `<button data-vote="${escape(id)}" ${!ready || state.voting || !state.online || state.controlsLocked ? 'disabled' : ''}>${escape(option.label)}</button>`).join('')}</div>
   </main>`;
   return `<main class="controller-main taste-mobile" data-team="${state.participant.team}">${errorBanner()}
@@ -451,7 +451,7 @@ function participantOxView() {
   const round = state.oxRound;
   const current = state.oxGame.control?.questionIndex === slide.questionIndex;
   const open = slide.view === 'question' && current && state.oxGame.control?.phase === 'open';
-  if (open && round.eligible && !round.vote) return `<main class="controller-main taste-mobile ox-mobile is-voting" data-team="${state.participant.team}">${errorBanner()}<div class="mobile-vote-options" role="group" aria-label="OX 응답" style="--vote-option-count:2">${['O', 'X'].map(answer => `<button data-ox-vote="${answer}" ${!state.oxReady || state.voting || !state.online || state.controlsLocked ? 'disabled' : ''}>${answer}</button>`).join('')}</div></main>`;
+  if (open && state.oxReady && round.eligible && !round.vote) return `<main class="controller-main taste-mobile ox-mobile is-voting" data-team="${state.participant.team}">${errorBanner()}<div class="mobile-vote-options" role="group" aria-label="OX 응답" style="--vote-option-count:2">${['O', 'X'].map(answer => `<button data-ox-vote="${answer}" ${state.voting || !state.online || state.controlsLocked ? 'disabled' : ''}>${answer}</button>`).join('')}</div></main>`;
   const eliminated = state.oxReady && slide.view !== 'intro' && (!round.eligible || (round.result && !round.result.survivors?.[state.participantId]));
   const message = eliminated ? '탈락' : round.result?.survivors?.[state.participantId] ? slide.view === 'score' ? '최종 생존' : '정답입니다' : '대기 중';
   return `<main class="controller-main taste-mobile ox-mobile" data-team="${state.participant.team}">${errorBanner()}<h1>${message}</h1></main>`;
@@ -707,9 +707,14 @@ async function action(name, errorId) {
 
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
-  // Pointer votes are submitted on release. Keep click activation for keyboards and assistive technology.
-  document.querySelectorAll('[data-vote]').forEach(control => control.addEventListener('click', event => { if (event.detail === 0) void voteTaste(control.dataset.vote); }));
-  document.querySelectorAll('[data-ox-vote]').forEach(control => control.addEventListener('click', event => { if (event.detail === 0) void voteOx(control.dataset.oxVote); }));
+  for (const control of document.querySelectorAll('[data-vote], [data-ox-vote]')) {
+    const voteKey = currentVoteKey();
+    control.addEventListener('click', event => {
+      // A handled pointer release must not submit again through its compatibility click.
+      if (event.detail > 0 && control === suppressedVoteControl) { suppressedVoteControl = null; return; }
+      activateVote(control, voteKey);
+    });
+  }
   document.querySelectorAll('[data-ox-question], [data-ox-answer]').forEach(control => control.addEventListener('input', () => {
     const index = control.dataset.oxQuestion ?? control.dataset.oxAnswer;
     const questions = state.oxDraft ?? state.oxQuestions ?? emptyOxQuestions();
@@ -907,6 +912,25 @@ function currentVoteKey() {
   return JSON.stringify([state.participantId, key, game.control?.roundId, game.control?.phase, slide?.questionIndex, state.presentation?.resetAt]);
 }
 
+function insideVoteControl(control, x, y) {
+  const bounds = control.getBoundingClientRect();
+  return x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
+}
+
+function activateVote(control, voteKey) {
+  // Some browsers deliver click without a matching pointerup. Release the redraw lock too.
+  let gesture;
+  if (pointerGesture?.voteControl) {
+    gesture = pointerGesture;
+    pointerGesture = null;
+    schedule();
+  }
+  if (!control.isConnected || control.disabled || voteKey !== currentVoteKey()) return;
+  if (gesture && (gesture.moved || gesture.voteKey !== voteKey)) return;
+  if (control.dataset.oxVote !== undefined) void voteOx(control.dataset.oxVote);
+  else void voteTaste(control.dataset.vote);
+}
+
 document.addEventListener('pointerdown', event => {
   if (!interactionLocked()) return;
   if (!event.isPrimary) {
@@ -917,31 +941,35 @@ document.addEventListener('pointerdown', event => {
   const voteControl = event.target instanceof Element ? event.target.closest('button[data-vote], button[data-ox-vote]') : null;
   if (state.role === 'participant' && !voteControl) return;
   if (voteControl && (voteControl.disabled || event.button !== 0)) return;
+  suppressedVoteControl = null;
   suppressClickUntil = 0;
   pointerGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, voteControl, voteKey: voteControl ? currentVoteKey() : null };
 }, true);
 document.addEventListener('pointermove', event => {
-  if (pointerGesture?.id === event.pointerId && Math.hypot(event.clientX - pointerGesture.x, event.clientY - pointerGesture.y) > 12) pointerGesture.moved = true;
+  if (pointerGesture?.id !== event.pointerId) return;
+  if (pointerGesture.voteControl) {
+    if (!insideVoteControl(pointerGesture.voteControl, event.clientX, event.clientY)) pointerGesture.moved = true;
+  } else if (Math.hypot(event.clientX - pointerGesture.x, event.clientY - pointerGesture.y) > 12) pointerGesture.moved = true;
 }, true);
 document.addEventListener('pointerup', event => {
   if (pointerGesture?.id !== event.pointerId) return;
   const gesture = pointerGesture;
-  const moved = gesture.moved || Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 12;
+  const control = gesture.voteControl;
+  const moved = gesture.moved || (!control && Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 12);
   if (moved) suppressClickUntil = performance.now() + 400;
   pointerGesture = null;
-  const control = gesture.voteControl;
-  if (control?.isConnected && !control.disabled && !moved && gesture.voteKey === currentVoteKey()) {
-    const bounds = control.getBoundingClientRect();
-    if (event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom) {
+  if (control) {
+    suppressedVoteControl = control;
+    if (!moved && insideVoteControl(control, event.clientX, event.clientY)) {
       if (event.cancelable) event.preventDefault();
-      if (control.dataset.oxVote !== undefined) void voteOx(control.dataset.oxVote);
-      else void voteTaste(control.dataset.vote);
+      activateVote(control, gesture.voteKey);
     }
   }
   schedule();
 }, true);
 function cancelPointerGesture() {
   if (pointerGesture) suppressClickUntil = performance.now() + 400;
+  if (pointerGesture?.voteControl) suppressedVoteControl = pointerGesture.voteControl;
   pointerGesture = null;
   schedule();
 }

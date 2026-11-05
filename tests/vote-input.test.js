@@ -24,7 +24,7 @@ function votingScreen(kind = 'taste') {
   const context = vm.createContext({
     state, Element: Button, performance: { now: () => 1000 },
     document: {
-      querySelectorAll(selector) { return selector === (kind === 'ox' ? '[data-ox-vote]' : '[data-vote]') ? [button] : []; },
+      querySelectorAll(selector) { return selector === '[data-vote], [data-ox-vote]' || selector === (kind === 'ox' ? '[data-ox-vote]' : '[data-vote]') ? [button] : []; },
       addEventListener(name, handler) { listeners.set(name, handler); },
     },
     window: { addEventListener(name, handler) { windowListeners.set(name, handler); } },
@@ -37,7 +37,7 @@ function votingScreen(kind = 'taste') {
   });
   const gestureStart = source.includes('function currentVoteKey()') ? source.indexOf('function currentVoteKey()') : source.indexOf("document.addEventListener('pointerdown'");
   vm.runInContext(
-    'let frame, pointerGesture, suppressClickUntil = 0, composing = false;\n'
+    'let frame, pointerGesture, suppressedVoteControl, suppressClickUntil = 0, composing = false;\n'
     + source.slice(source.indexOf('function schedule()'), source.indexOf('function relayOperatorError'))
     + source.slice(source.indexOf('function bindEvents()'), source.indexOf('async function join('))
     + source.slice(gestureStart, source.indexOf('function preventViewportGesture'))
@@ -79,6 +79,32 @@ for (const kind of ['taste', 'ox']) {
     screen.click(0);
     assert.equal(screen.votes.length, 1);
   });
+
+  test(`${kind} accepts native click when the browser omits pointer events`, () => {
+    const screen = votingScreen(kind);
+    screen.click(1);
+    assert.equal(screen.votes.length, 1);
+  });
+
+  test(`${kind} accepts native click when pointerup is missing and releases the redraw lock`, () => {
+    const screen = votingScreen(kind);
+    screen.pointer('pointerdown');
+    screen.update();
+    screen.click(1);
+    screen.flush();
+    assert.equal(screen.votes.length, 1);
+    assert.equal(screen.renders, 1);
+  });
+
+  test(`${kind} accepts movement within the same large voting button`, () => {
+    const screen = votingScreen(kind);
+    screen.pointer('pointerdown');
+    screen.pointer('pointermove', { clientX: 80, clientY: 75 });
+    screen.pointer('pointerup', { clientX: 80, clientY: 75 });
+    assert.equal(screen.votes.length, 1);
+    screen.click(1);
+    assert.equal(screen.votes.length, 1);
+  });
 }
 
 test('cancelled, dragged, multi-touch, disabled and detached voting controls do not submit', () => {
@@ -86,11 +112,13 @@ test('cancelled, dragged, multi-touch, disabled and detached voting controls do 
   cancel.pointer('pointerdown');
   cancel.pointer('pointercancel');
   cancel.pointer('pointerup');
+  cancel.click(1);
   assert.equal(cancel.votes.length, 0);
   const drag = votingScreen();
   drag.pointer('pointerdown');
-  drag.pointer('pointermove', { clientX: 80 });
+  drag.pointer('pointermove', { clientX: 150 });
   drag.pointer('pointerup', { clientX: 50 });
+  drag.click(1);
   assert.equal(drag.votes.length, 0);
   const multi = votingScreen();
   multi.pointer('pointerdown');
@@ -133,6 +161,38 @@ test('a held tap cannot cross a question, round, phase, reset or participant cha
     screen.pointer('pointerdown');
     change(screen.state);
     screen.pointer('pointerup');
+    screen.click(1);
     assert.equal(screen.votes.length, 0);
   }
+});
+
+test('a stale fallback click releases the redraw lock without answering a new question', () => {
+  const screen = votingScreen('ox');
+  screen.pointer('pointerdown');
+  screen.state.questionIndex++;
+  screen.update();
+  screen.click(1);
+  screen.flush();
+  assert.equal(screen.votes.length, 0);
+  assert.equal(screen.renders, 1);
+});
+
+test('a cancelled compatibility click is ignored once and does not block a later native-only tap', () => {
+  const screen = votingScreen('ox');
+  screen.pointer('pointerdown');
+  screen.pointer('pointercancel');
+  screen.click(1);
+  assert.equal(screen.votes.length, 0);
+  screen.click(1);
+  assert.equal(screen.votes.length, 1);
+});
+
+test('OX voting buttons appear only after eligibility, prior vote and result have loaded', () => {
+  const state = { oxReady: false, oxGame: { control: { questionIndex: 0, phase: 'open' } }, oxRound: { eligible: true }, participant: { team: 'A' }, presentation: { slideIndex: 0 } };
+  const context = vm.createContext({ state, STAGES: [{ view: 'question', questionIndex: 0 }], errorBanner: () => '' });
+  vm.runInContext(source.slice(source.indexOf('function participantOxView()'), source.indexOf('function participantView()')), context);
+  assert.doesNotMatch(context.participantOxView(), /data-ox-vote/);
+  state.oxReady = true;
+  assert.match(context.participantOxView(), /data-ox-vote="O"/);
+  assert.match(context.participantOxView(), /data-ox-vote="X"/);
 });
