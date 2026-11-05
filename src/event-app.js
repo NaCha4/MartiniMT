@@ -2,186 +2,615 @@ import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 import './event-style.css';
 import QRCode from 'qrcode';
 import * as api from './event-data.js';
-import { TEAM_IDS, STAGES, stageIndex, touchRoundIsActive, firstTouch, rosterFromInputs, onlineParticipants, friendlyError } from './event-model.js';
+import { TEAM_IDS, TEAM_NAMES, STAGES, stageIndex, touchRoundIsActive, touchRoundResult, firstTouch, rosterFromInputs, rowsFromParticipants, readRosterDraft, onlineParticipants, participantUrl, friendlyError } from './event-model.js';
+import { TASTE_ROUNDS, REVEAL_INTERVAL, rankedTeams, revealFinished } from './taste-model.js';
+import peatImage from './assets/whisky/peat.jpg';
+import sherryImage from './assets/whisky/sherry.jpg';
+import bourbonImage from './assets/whisky/bourbon.jpg';
+
+const WHISKY_VISUALS = {
+  peat: { image: peatImage, alt: '피트 연기와 황금빛 위스키' },
+  sherry: { image: sherryImage, alt: '건포도와 무화과, 짙은 호박색 위스키' },
+  bourbon: { image: bourbonImage, alt: '오크통과 바닐라, 캐러멜을 곁들인 위스키' },
+};
 
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const local = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
-  set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsing may restrict storage. */ } },
+  set(key, value) { try { localStorage.setItem(key, value); return true; } catch { return false; } },
 };
 const queryRoom = new URLSearchParams(location.search).get('room');
+const rosterStorageKey = api.emulator ? 'martini.host-roster.emulator' : 'martini.host-roster';
+const managerStorageKey = api.emulator ? 'martini.manager-name.emulator' : 'martini.manager-name';
+let cachedRoster = queryRoom ? null : readRosterDraft(local.get(rosterStorageKey));
+const localRoster = !queryRoom && !api.emulator && !cachedRoster
+  ? readRosterDraft(local.get('martini.host-roster.emulator')) : null;
 const state = {
   role: queryRoom ? 'participant' : 'host', room: queryRoom, uid: null, online: false, ready: false,
-  error: '', presenting: false, slideIndex: 0, busy: false, dirty: false,
+  error: '', presenting: false, slideIndex: 0, busy: false, controlsLocked: false, dirty: cachedRoster?.pending ?? false, draftSaved: Boolean(cachedRoster),
+  savingRoster: false, rosterError: '',
+  managerName: queryRoom ? '' : local.get(managerStorageKey) ?? '', managerDirty: !queryRoom && local.get(`${managerStorageKey}.pending`) === 'true', managerSaving: false, managerError: '',
+  managerBinding: null, presentation: null, finalizingWinner: false, operatorError: null,
   meta: null, stage: { step: 'setup' }, participants: {}, bindings: {}, presence: {}, responses: {},
-  rows: Object.fromEntries(TEAM_IDS.map(team => [team, Array(6).fill('')])),
-  teamNames: Object.fromEntries(TEAM_IDS.map(team => [team, `${team}조`])), title: '마티니 MT',
-  participantId: null, participant: null, instruction: null, response: null, choices: null, name: '',
-  raceRoundId: null, winner: null, tapping: false, submittedRoundId: null,
+  rows: cachedRoster?.rows ?? localRoster?.rows ?? rowsFromParticipants(),
+  participantId: null, participant: null, instruction: null, response: null, responseReady: false, choices: null, name: '',
+  raceRoundId: null, winner: null, winnerRevealedAt: 0, tapping: false, submittedRoundId: null,
   screenStarting: false, fullscreenFallback: false,
+  tasteGames: {}, tasteVotes: {}, gameError: '', teamScores: null,
+  voting: false, serverOffset: 0, scoreEntryAt: 0,
 };
 let participantStops = [], presenceClose, presenceEpoch = 0, frame, composing = false;
+let rosterSaveTimer, rosterSavePromise;
+let managerSaveTimer, managerSavePromise, managementStops = [];
+let controlsUnlockTimer, pointerGesture, suppressClickUntil = 0, scriptPosition;
+let revealTimer, scoreFrame;
+let tasteStops = [], tasteWatchKey;
 
-function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = null; if (!composing) render(); }); }
-function showError(error) { state.error = typeof error === 'string' ? error : friendlyError(error); schedule(); }
+function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = null; if (!composing && !pointerGesture) render(); }); }
+function relayOperatorError(message) {
+  if (state.role === 'host' && state.presenting && state.room) {
+    // Keep the original local error if its delivery also fails.
+    void api.reportOperatorError(state.room, message).catch(() => {});
+  }
+}
+function showError(error) {
+  state.error = typeof error === 'string' ? error : friendlyError(error);
+  relayOperatorError(state.error);
+  schedule();
+}
+function showGameError(error) {
+  state.gameError = friendlyError(error);
+  relayOperatorError(state.gameError);
+  schedule();
+}
 function connectedIds() { return onlineParticipants(state.presence); }
 function count() { return Object.values(state.rows).flat().filter(name => name.trim()).length; }
-function teamName(team) { return Object.values(state.participants).find(person => person.team === team)?.teamName ?? state.teamNames[team]; }
-function inviteUrl() { const url = new URL(location.href); url.search = ''; url.hash = ''; url.searchParams.set('room', state.room); return url.href; }
+function interactionLocked() {
+  return state.role === 'host' ? state.presenting : Boolean(state.participantId || state.role === 'manager');
+}
+function lockControls() {
+  state.controlsLocked = true;
+  clearTimeout(controlsUnlockTimer);
+  controlsUnlockTimer = setTimeout(() => { state.controlsLocked = false; schedule(); }, 400);
+  schedule();
+}
+function rememberRoster() {
+  cachedRoster = { rows: state.rows, pending: state.dirty };
+  state.draftSaved = local.set(rosterStorageKey, JSON.stringify(cachedRoster));
+}
+function rosterStatus() {
+  if (state.rosterError) return state.rosterError;
+  if (state.savingRoster) return '자동 저장 중…';
+  if (state.dirty) return state.draftSaved ? '기기에 저장됨 · 동기화 대기 중' : '동기화 대기 중';
+  return Object.keys(state.participants).length ? '자동 저장됨' : '명단 입력 대기';
+}
+function queueRosterSave() {
+  clearTimeout(rosterSaveTimer);
+  if (state.role !== 'host' || !state.ready || !state.online || !state.dirty || state.presenting || composing) return;
+  rosterSaveTimer = setTimeout(() => { void flushRoster().catch(() => {}); }, 350);
+}
+function flushRoster() {
+  clearTimeout(rosterSaveTimer);
+  if (rosterSavePromise) return rosterSavePromise.then(flushRoster);
+  if (!state.dirty) return Promise.resolve();
+  state.savingRoster = true;
+  state.rosterError = '';
+  schedule();
+  rosterSavePromise = save().catch(error => {
+    state.rosterError = friendlyError(error);
+    throw error;
+  }).finally(() => {
+    rosterSavePromise = null;
+    state.savingRoster = false;
+    schedule();
+  });
+  return rosterSavePromise.then(flushRoster);
+}
+function managerStatus() {
+  if (state.managerError) return state.managerError;
+  if (state.managerSaving || state.managerDirty) return '관리자 이름 저장 중…';
+  return state.managerBinding ? '관리자 휴대폰 등록됨' : 'QR로 접속해 관리자 이름을 입력하세요.';
+}
+function queueManagerSave() {
+  clearTimeout(managerSaveTimer);
+  if (state.role !== 'host' || !state.ready || !state.online || !state.managerDirty || composing) return;
+  managerSaveTimer = setTimeout(() => { void flushManager().catch(() => {}); }, 350);
+}
+function flushManager() {
+  clearTimeout(managerSaveTimer);
+  if (managerSavePromise) return managerSavePromise.then(flushManager);
+  if (!state.managerDirty) return Promise.resolve();
+  const name = state.managerName.trim().replace(/\s+/gu, ' ');
+  state.managerSaving = true;
+  state.managerError = '';
+  schedule();
+  managerSavePromise = api.saveManagerName(state.room, name).then(() => {
+    if (state.managerName.trim().replace(/\s+/gu, ' ') === name) {
+      state.managerName = name;
+      state.managerDirty = false;
+      local.set(managerStorageKey, name);
+      local.set(`${managerStorageKey}.pending`, 'false');
+    }
+  }).catch(error => {
+    state.managerError = String(error?.code).toLowerCase().includes('permission')
+      ? '관리자 기능은 Firebase 권한 규칙 반영 후 사용할 수 있습니다.' : friendlyError(error);
+    throw error;
+  }).finally(() => { managerSavePromise = null; state.managerSaving = false; schedule(); });
+  return managerSavePromise.then(flushManager);
+}
+function inviteUrl() {
+  const networkUrl = api.emulator ? null : $('meta[name="dev-network-url"]')?.content;
+  return participantUrl(location.href, state.room, networkUrl);
+}
 function isFullscreen() { return Boolean(document.fullscreenElement) || (innerWidth >= screen.width - 8 && innerHeight >= screen.height - 8); }
-function fullscreenControl() { return isFullscreen() ? '' : '<button class="button outline fullscreen-button" data-action="fullscreen" data-no-slide>전체화면</button>'; }
+function fullscreenControl() { return isFullscreen() ? '' : `<button class="button outline fullscreen-button" data-action="fullscreen" data-no-slide ${state.screenStarting ? 'disabled' : ''}>전체화면</button>`; }
 function controllerFullscreen() { return Boolean(document.fullscreenElement) || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true; }
 function controllerCanFullscreen() { return Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen); }
 async function startController() {
   if (state.screenStarting) return;
   state.screenStarting = true;
+  schedule();
   try {
     if (!controllerFullscreen() && controllerCanFullscreen()) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-    if (screen.orientation?.lock) await screen.orientation.lock('landscape').catch(() => {});
-  } catch { state.fullscreenFallback = true; }
-  finally { state.screenStarting = false; schedule(); }
+    if (screen.orientation?.lock) await screen.orientation.lock('landscape-primary').catch(() => {});
+  } catch (error) {
+    state.fullscreenFallback = error?.name === 'NotSupportedError';
+    if (!state.fullscreenFallback) state.error = '전체화면 전환을 완료하지 못했어요. 시작 버튼을 다시 눌러주세요.';
+  }
+  finally { state.screenStarting = false; lockControls(); schedule(); }
 }
 function connectionBadge() { return `<span class="connection ${state.online ? 'online' : ''}">${api.emulator ? '로컬 테스트 · ' : ''}${state.online ? '실시간 연결됨' : '연결 중'}</span>`; }
 function topbar() { return `<header class="topbar"><a class="brand" href="./">마티니 MT</a>${connectionBadge()}</header>`; }
 function button(text, action, type = 'soft', disabled = false) { return `<button class="button ${type}" data-action="${action}" ${disabled ? 'disabled' : ''}>${escape(text)}</button>`; }
-function errorBanner() { return state.error ? `<div class="error-banner" role="alert">${escape(state.error)}<button data-action="dismiss">닫기</button></div>` : ''; }
+function errorBanner() {
+  const message = state.error || (state.role === 'manager' ? state.gameError || state.operatorError?.message : '');
+  const errorId = state.role === 'manager' && state.operatorError && state.operatorError.message === message ? state.operatorError.id : '';
+  return message ? `<div class="error-banner" role="alert">${escape(message)}<button data-action="dismiss" data-error-id="${escape(errorId)}">닫기</button></div>` : '';
+}
+function tasteContext(index = state.presentation?.slideIndex ?? state.slideIndex) {
+  const slide = STAGES[index];
+  const key = slide?.game ?? 'whisky';
+  return { key, slide, game: state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
+}
+function nextBlocked() {
+  const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.view === 'vote' && !game.result) return true;
+  if (slide.view === 'vote') return !['prediction-closed', 'revealed'].includes(game.control?.phase);
+  if (slide.view === 'reveal') return game.control?.phase !== 'revealed' || !revealFinished(game.result, Date.now() + state.serverOffset);
+  return state.slideIndex === STAGES.length - 1;
+}
+
+function tasteControls(disabled) {
+  const { slide, game } = tasteContext(state.slideIndex);
+  const phase = game.control?.phase;
+  let control = '';
+  if (slide.view === 'vote') {
+    const actions = {
+      ready: ['투표 시작', 'start-preference'],
+      'preference-open': ['투표 종료', 'stop-preference'],
+      'preference-closed': ['최다 득표 예상 투표 시작', 'start-prediction'],
+      'prediction-open': ['예상 투표 종료', 'stop-prediction'],
+      'prediction-closed': !game.result ? ['정답 공개', 'reveal-answer'] : null,
+    };
+    const action = actions[phase];
+    if (action) control = button(action[0], action[1], 'dark', disabled);
+    const votes = phase === 'prediction-open' ? game.predictionVotes : game.preferenceVotes;
+    if (action && phase !== 'prediction-closed') control += `<p class="remote-vote-count">${Object.keys(votes ?? {}).length} / ${Object.keys(game.roster ?? {}).length}명 투표</p>`;
+  }
+  if (slide.view === 'reveal' && phase === 'prediction-closed') control = button('결과 공개', 'reveal-taste', 'dark', disabled);
+  return control ? `<section class="remote-game-controls" aria-label="투표 진행">${control}</section>` : '';
+}
 
 function rosterCard(team) {
   const online = connectedIds();
-  return `<section class="team-card"><div class="team-heading"><input aria-label="${team}조 이름" id="team-${team}" data-team-name="${team}" maxlength="20" value="${escape(state.teamNames[team])}"/><span id="count-${team}" class="small-count">${state.rows[team].filter(name => name.trim()).length} / 6</span></div><div class="roster">${state.rows[team].map((name, index) => {
+  return `<section class="team-card"><div class="team-heading"><h3>${TEAM_NAMES[team]}</h3><span id="count-${team}" class="small-count">${state.rows[team].filter(name => name.trim()).length} / 6</span></div><div class="roster">${state.rows[team].map((name, index) => {
     const id = `${team}${index + 1}`, binding = state.bindings[id];
-    return `<div class="roster-row"><span class="row-number">${String(index + 1).padStart(2, '0')}</span><input id="name-${id}" data-person="${id}" aria-label="${team}조 ${index + 1}번 이름" maxlength="24" placeholder="참가자 실명" value="${escape(name)}"/><span class="person-state ${online.has(id) ? 'active' : ''}" title="${online.has(id) ? '현재 접속 중' : '미접속'}"></span>${binding ? `<button class="unlink" data-release="${id}" aria-label="${escape(name)} 기기 연결 해제">해제</button>` : ''}</div>`;
+    return `<div class="roster-row"><span class="row-number">${String(index + 1).padStart(2, '0')}</span><input id="name-${id}" data-person="${id}" aria-label="${TEAM_NAMES[team]} ${index + 1}번 이름" maxlength="24" placeholder="참가자 실명" value="${escape(name)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span class="person-state ${online.has(id) ? 'active' : ''}" title="${online.has(id) ? '현재 접속 중' : '미접속'}"></span>${binding ? `<button class="unlink" data-release="${id}" aria-label="${escape(name)} 기기 연결 해제">해제</button>` : ''}</div>`;
   }).join('')}</div></section>`;
 }
 
 function hostView() {
   if (state.presenting) return presentationView();
-  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>명단 입력 후 발표 시작 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '저장 중…' : '명단 저장', 'save', 'white', !state.ready || state.busy)}${button('발표 시작', 'present', 'dark', !state.ready || state.busy)}</div></section>${errorBanner()}<section class="event-strip"><div><label for="event-title">행사 이름</label><input id="event-title" maxlength="60" value="${escape(state.title)}"/></div><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div class="event-status">${state.dirty ? '저장하지 않은 변경사항' : Object.keys(state.participants).length ? '명단 저장됨' : '명단 입력 대기'}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div></main>`;
+  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>명단 자동 저장 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${state.managerBinding ? button('관리자 휴대폰 연결 해제', 'release-manager') : ''}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div></main>`;
+}
+
+function managerView() {
+  const disabled = !state.online || state.busy || state.controlsLocked;
+  const clockwise = screen.orientation?.angle === 270 || screen.orientation?.angle === -90;
+  const slide = state.presenting ? STAGES[state.slideIndex] : null;
+  return `<main class="manager-controller" data-rotation="${clockwise ? 'clockwise' : 'counterclockwise'}" aria-busy="${state.busy || state.controlsLocked}">
+    <section id="manager-script" class="remote-script" data-script-id="${slide?.id ?? 'setup'}" role="region" aria-label="진행 대본" tabindex="0"><p>${escape(slide?.script ?? '')}</p></section>
+    ${errorBanner()}
+    ${state.presenting ? tasteControls(disabled) : ''}
+    <nav class="remote-navigation" aria-label="발표 화면 이동">
+      ${button('이전 화면', 'previous', 'soft', disabled || !state.presenting)}
+      ${button('다음 화면', 'next', 'dark', disabled || !state.presenting || nextBlocked())}
+    </nav>
+  </main>`;
+}
+
+function tastePresentation(slide) {
+  const { game } = tasteContext(state.slideIndex);
+  const phase = game.control?.phase;
+  if (slide.id === 'taste-intro') return `<section class="taste-intro taste-screen">
+    <span class="taste-eyebrow">RECREATION 01</span><h1>취향을<br/><em>읽어라</em></h1>
+    <div class="taste-rules"><p><b>01</b> 나의 취향에 투표</p><p><b>02</b> 가장 많은 선택을 예상</p><p><b>03</b> 정답자 한 명당 <strong>+10점</strong></p></div>
+  </section>`;
+  if (slide.view === 'vote') {
+    const open = phase === 'preference-open' || phase === 'prediction-open';
+    const answerRevealed = Boolean(game.result);
+    const answerElapsed = answerRevealed ? Math.max(0, Date.now() + state.serverOffset - (game.result.revealedAt ?? 0)) : 0;
+    const topIds = game.result?.topIds ?? {};
+    const tied = Object.keys(topIds).length > 1;
+    return `<section class="taste-screen taste-ballot-screen" data-game="${escape(slide.game)}" style="--answer-delay:-${answerElapsed}ms">
+      <div class="whisky-options">${Object.entries(game.options ?? {}).sort(([, a], [, b]) => a.order - b.order).map(([id, option]) => {
+        const visual = Object.hasOwn(WHISKY_VISUALS, id) ? WHISKY_VISUALS[id] : null;
+        const illustration = visual ? `<img class="whisky-image" src="${visual.image}" alt="${escape(visual.alt)}" draggable="false"/>`
+          : slide.game === 'soju' ? '<div class="soju-bottle" aria-hidden="true"></div>' : '';
+        const winner = answerRevealed && topIds[id];
+        const answerClass = answerRevealed ? (winner ? 'is-answer' : 'is-dimmed') : '';
+        return `<article class="whisky-option ${answerClass}" data-option="${escape(id)}">${illustration}${winner ? `<span class="whisky-answer-label">${tied ? '공동 정답' : '정답'}</span>` : ''}<h2>${escape(option.label)}</h2>${winner ? `<p class="whisky-vote-count"><strong>${game.outcome?.counts?.[id] ?? 0}</strong>표</p>` : ''}</article>`;
+      }).join('')}</div>
+      <div class="taste-ballot-footer" aria-live="polite">${phase === 'prediction-closed' && !answerRevealed
+        ? button('정답 공개', 'reveal-answer', 'dark', !state.online || state.busy || state.controlsLocked)
+        : `<p class="taste-phase" data-phase="${escape(phase)}">${answerRevealed ? '정답이 공개되었습니다' : open ? '휴대폰에서 투표해주세요' : phase === 'ready' ? '투표를 준비하고 있습니다' : '투표가 마감되었습니다'}</p>`}</div>
+    </section>`;
+  }
+  if (slide.view === 'reveal') {
+    const result = game.result;
+    const elapsed = Math.max(0, Date.now() + state.serverOffset - (result?.revealedAt ?? 0));
+    return `<section class="taste-screen taste-reveal">
+      <div class="reveal-teams">${TEAM_IDS.map(team => `<section class="reveal-team" data-team="${team}"><h2>${TEAM_NAMES[team]}</h2><div>${Object.entries(game.roster ?? {}).filter(([, person]) => person.team === team).map(([id, person]) => {
+        const correct = Boolean(result?.correctIds?.[id]);
+        const delay = correct ? result.order[id] * REVEAL_INTERVAL - elapsed : 0;
+        return `<div class="reveal-person ${correct ? 'is-correct' : ''}" data-person="${id}" style="--reveal-delay:${delay}ms"><i aria-hidden="true"></i><span>${escape(person.name)}</span></div>`;
+      }).join('')}</div></section>`).join('')}</div>
+    </section>`;
+  }
+  const award = state.teamScores?.awards?.[game.control?.roundId];
+  const before = rankedTeams(award?.before), after = rankedTeams(award?.after ?? state.teamScores?.totals);
+  return `<section class="taste-screen taste-score"><div class="scoreboard" style="--score-elapsed:-${Math.max(0, performance.now() - state.scoreEntryAt)}ms">
+    ${after.map(entry => `<article class="score-row" data-team="${entry.team}" style="--from-rank:${before.find(item => item.team === entry.team).index};--to-rank:${entry.index}">
+      <span class="score-rank">${entry.rank}<small>위</small></span><h2>${TEAM_NAMES[entry.team]}</h2><span class="score-earned">+${award?.points[entry.team] ?? 0}</span><strong data-score-team="${entry.team}">${entry.score}</strong><span class="score-unit">점</span>
+    </article>`).join('')}</div></section>`;
+}
+
+function joinNetworkView() {
+  const online = connectedIds();
+  const layout = {
+    A: { hub: [32, 25], nodes: [[8, 14], [21, 10], [9, 27], [22, 23], [8, 40], [22, 36]] },
+    B: { hub: [68, 25], nodes: [[92, 14], [79, 10], [91, 27], [78, 23], [92, 40], [78, 36]] },
+    C: { hub: [32, 75], nodes: [[8, 60], [22, 64], [9, 73], [22, 77], [8, 86], [21, 90]] },
+    D: { hub: [68, 75], nodes: [[92, 60], [78, 64], [91, 73], [78, 77], [92, 86], [79, 90]] },
+  };
+  const links = [];
+  const teams = TEAM_IDS.map(team => {
+    const { hub, nodes } = layout[team];
+    const [hubX, hubY] = [hub[0] * 10, hub[1] * 7];
+    const originX = hub[0] < 50 ? 405 : 595;
+    const originY = hub[1] < 50 ? 270 : 430;
+    const trunk = `M ${originX} ${originY} C ${hubX} ${originY}, ${originX} ${hubY}, ${hubX} ${hubY}`;
+    links.push(`<g data-team="${team}"><path class="synapse-trunk" d="${trunk}"/><circle class="synapse-pulse" r="3"><animateMotion dur="4s" repeatCount="indefinite" path="${trunk}"/></circle></g>`);
+    const people = Object.entries(state.participants).filter(([, person]) => person.team === team);
+    const members = people.map(([id, person], index) => {
+      const [x, y] = nodes[index];
+      const active = online.has(id);
+      const path = `M ${hubX} ${hubY} C ${hubX} ${y * 7}, ${x * 10} ${hubY}, ${x * 10} ${y * 7}`;
+      links.push(`<g data-team="${team}" class="${active ? 'signal-active' : ''}"><path class="synapse-link" d="${path}"/>${active ? `<circle class="synapse-pulse" r="2.5"><animateMotion dur="3s" repeatCount="indefinite" path="${path}"/></circle>` : ''}</g>`);
+      return `<div class="stage-person ${active ? 'joined' : ''}" data-participant="${escape(id)}" style="left:${x}%;top:${y}%" title="${escape(person.name)}">
+        <span>${escape(person.name)}</span><span class="node-status"><i aria-hidden="true"></i>${active ? '접속 중' : '미접속'}</span>
+      </div>`;
+    }).join('');
+    return `<section class="synapse-team" data-team="${team}">
+      <div class="team-hub" style="left:${hub[0]}%;top:${hub[1]}%"><h2 class="stage-team-name">${TEAM_NAMES[team]}</h2><span>${people.filter(([id]) => online.has(id)).length} / ${people.length}</span></div>
+      ${members}
+    </section>`;
+  }).join('');
+  return `<div class="synapse-stage">
+    <div class="synapse-field" aria-hidden="true"></div>
+    <svg class="synapse-connections" viewBox="0 0 1000 700" preserveAspectRatio="none" aria-hidden="true">${links.join('')}</svg>
+    ${teams}
+    <aside class="qr-card synapse-core">
+      <div class="core-brackets" aria-hidden="true"></div>
+      <div class="qr-paper"><canvas class="invite-qr" aria-label="참가자 입장 QR 코드"></canvas></div>
+      <div class="arrival-heading" role="status"><span>접속 <strong>${online.size}</strong><span> / ${Object.keys(state.participants).length}</span></span></div>
+      <input id="invite-url" type="hidden" value="${escape(inviteUrl())}"/>
+    </aside>
+  </div>`;
 }
 
 function presentationView() {
-  const slide = STAGES[state.slideIndex], online = connectedIds(), total = Object.keys(state.participants).length;
+  const slide = STAGES[state.slideIndex];
+  const resetControl = `<button class="button outline presentation-reset" data-action="reset" data-no-slide title="진행·투표·점수를 초기화하고 1번 화면으로 돌아갑니다" ${state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}>초기화</button>`;
+  const screenCode = state.winner ? slide.resultScreenCode ?? slide.screenCode : slide.screenCode;
+  const screenLabel = import.meta.env.DEV ? `<span class="presentation-screen-code" aria-hidden="true">${screenCode}</span>` : '';
+  const winnerElapsed = state.winner ? Math.max(0, performance.now() - state.winnerRevealedAt) : 0;
   let content;
   if (slide.id === 'join') {
-    content = `<div class="presentation-body join-slide"><section class="arrival-board"><div class="arrival-heading" role="status"><span>접속 <strong>${online.size}</strong> / ${total}명</span></div><div class="arrival-grid">${TEAM_IDS.map(team => `<section class="stage-team"><h2 class="stage-team-name">${escape(teamName(team))}</h2>${Object.entries(state.participants).filter(([, person]) => person.team === team).map(([id, person]) => `<div class="stage-person ${online.has(id) ? 'joined' : ''}"><span>${escape(person.name)}</span><span>${online.has(id) ? '입장 완료' : '미접속'}</span></div>`).join('')}</section>`).join('')}</div></section><aside class="qr-card"><div class="qr-paper"><canvas class="invite-qr" aria-label="참가자 입장 QR 코드"></canvas></div><p>휴대폰 카메라로 스캔하세요.</p><input id="invite-url" readonly value="${escape(inviteUrl())}" aria-label="참가자 접속 주소" tabindex="-1"/></aside></div>`;
-  } else if (state.winner) {
-    content = `<section class="winner-slide" aria-live="polite"><p>가장 먼저 터치한 사람</p><h2 id="winner-name">${escape(state.winner.name)}</h2><span>${escape(state.winner.teamName)}</span></section>`;
+    content = joinNetworkView();
+  } else if (state.slideIndex >= 2) {
+    content = tastePresentation(slide);
   } else {
-    content = `<section class="race-slide"><p>${state.busy ? '휴대폰에 화면을 전달하고 있습니다.' : '휴대폰에 나타난 버튼을 가장 먼저 터치하세요.'}</p><div class="race-waiting">${state.busy ? '준비 중' : '터치 대기 중'}</div></section>`;
+    const message = state.winner
+      ? `<h2 id="winner-name">${escape(state.winner.name)}</h2><p class="winner-team">${TEAM_NAMES[state.winner.team]}</p>`
+      : `<h1 class="race-waiting">${state.busy ? '준비 중' : '가장 먼저<br/><span>터치하세요!</span>'}</h1>`;
+    content = `<section class="signal-screen ${state.winner ? 'winner-slide' : 'race-slide'}" aria-live="polite">
+      ${state.winner ? '<div class="winner-backdrop" aria-hidden="true"></div>' : ''}
+      <div class="race-copy">${message}</div>
+    </section>`;
   }
-  return `<div class="presentation" data-slide="${slide.id}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main"><section class="presentation-title"><h1>${state.winner && slide.id === 'touch' ? '선착순 결과' : escape(slide.title)}</h1><p>${state.winner && slide.id === 'touch' ? '서버에 가장 먼저 접수된 터치입니다.' : escape(slide.description)}</p></section>${errorBanner()}${content}</main>${fullscreenControl()}</div>`;
+  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${resetControl}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
+}
+
+function participantTasteView() {
+  const { slide, game, votes } = tasteContext();
+  const phase = game.control?.phase;
+  const prediction = phase === 'prediction-open';
+  const open = slide.view === 'vote' && (prediction || phase === 'preference-open');
+  const vote = prediction ? votes.prediction : votes.preference;
+  const ready = prediction ? votes.predictionReady : votes.preferenceReady;
+  if (open && !vote) return `<main class="controller-main taste-mobile is-voting" data-team="${state.participant.team}">${errorBanner()}
+    <div class="mobile-vote-options" role="group" aria-label="${prediction ? '최다 득표 예상 투표' : '취향 투표'}" style="--vote-option-count:${Object.keys(game.options ?? {}).length}">${Object.entries(game.options ?? {}).sort(([, a], [, b]) => a.order - b.order).map(([id, option]) => `<button data-vote="${escape(id)}" ${!ready || state.voting || !state.online || state.controlsLocked ? 'disabled' : ''}>${escape(option.label)}</button>`).join('')}</div>
+  </main>`;
+  return `<main class="controller-main taste-mobile" data-team="${state.participant.team}">${errorBanner()}
+    <h1>대기 중</h1>
+  </main>`;
 }
 
 function participantView() {
   const portrait = matchMedia('(orientation: portrait)').matches;
+  const enteringName = state.role === 'participant' && !state.participant;
   const needsFullscreen = !controllerFullscreen() && controllerCanFullscreen() && !state.fullscreenFallback;
-  if (portrait || needsFullscreen) return `<main class="controller-gate"><h1>${portrait ? '휴대폰을 가로로<br/>돌려주세요.' : '전체화면으로 시작하세요.'}</h1><p>${portrait ? '가로 화면으로 진행합니다.' : '화면을 터치하며 참여합니다.'}</p>${needsFullscreen ? `<button class="button dark" data-action="controller-start" ${state.screenStarting ? 'disabled' : ''}>${state.screenStarting ? '전환 중…' : '전체화면으로 시작'}</button>` : ''}</main>`;
-  if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>참가자 입장</h1><p>등록된 이름을 입력하세요.</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${escape(person.teamName)} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
-  const active = touchRoundIsActive(state.instruction, state.stage);
+  if (!enteringName && (portrait || needsFullscreen)) return `<main class="controller-gate"><h1>${needsFullscreen ? '전체화면 버튼을<br/>눌러주세요.' : '가로 화면으로 진행합니다.'}</h1><p>${needsFullscreen ? '버튼을 누르면 가로 전체화면으로 시작합니다.' : '기기를 가로로 돌려 참여해주세요.'}</p>${errorBanner()}${needsFullscreen ? `<button class="button dark" data-action="controller-start" ${state.screenStarting ? 'disabled' : ''}>${state.screenStarting ? '전환 중…' : '전체화면으로 시작'}</button>` : ''}</main>`;
+  if (state.role === 'manager') return managerView();
+  if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>참가자 입장</h1><p>등록된 이름을 입력하세요.</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${TEAM_NAMES[id[0]]} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
+  if (state.presentation?.active && state.presentation.slideIndex >= 2) return participantTasteView();
+  const result = touchRoundResult(state.instruction, state.stage, state.presentation, state.participantId);
+  const active = touchRoundIsActive(state.instruction, state.stage) && !result;
   const submitted = Boolean(state.instruction?.id) && (state.submittedRoundId === state.instruction.id || state.response?.instructionId === state.instruction.id);
-  const showTarget = active && !submitted;
-  const identity = `<span class="controller-identity">${escape(state.participant.teamName)} · ${escape(state.participant.name)}</span>`;
-  const ended = state.stage.step === 'closed';
-  const statusTitle = ended ? '끝났습니다' : state.tapping ? '전송 중…' : active && submitted ? '입력 완료' : '대기 중';
-  const statusDescription = ended ? '선착순 입력이 마감되었습니다.' : !state.online ? '연결을 복구하고 있습니다.' : '진행자의 안내를 기다려 주세요.';
-  return `<main class="controller-main">${errorBanner()}${showTarget ? `<button id="tap-target" class="tap-target" ${state.tapping || !state.online ? 'disabled' : ''}>${identity}<strong>${state.tapping ? '전송 중…' : state.online ? '터치하세요!' : '재연결 중…'}</strong><span>화면 어디든 누르세요</span></button>` : `<section class="waiting-card">${identity}<h2>${statusTitle}</h2><p>${statusDescription}</p></section>`}</main>`;
+  const showTarget = active && state.responseReady && !submitted;
+  const identity = `<span class="controller-identity">${TEAM_NAMES[state.participant.team]} · ${escape(state.participant.name)}</span>`;
+  const ended = state.stage.step === 'closed' || Boolean(result);
+  const statusTitle = result === 'winner' ? '가장 먼저 터치했습니다!'
+    : ended ? '마감되었습니다' : state.tapping ? '전송 중…' : active && submitted ? '입력 완료' : '대기 중';
+  const statusDescription = !ended && !state.online ? '연결을 복구하고 있습니다.' : '';
+  return `<main class="controller-main" data-team="${state.participant.team}">${errorBanner()}${showTarget ? `<button id="tap-target" class="tap-target" ${state.tapping || !state.online || state.controlsLocked || state.screenStarting ? 'disabled' : ''}>${identity}<strong>${state.tapping ? '전송 중…' : state.online ? '터치하세요!' : '재연결 중…'}</strong><span>화면 어디든 누르세요</span></button>` : `<section class="waiting-card" data-result="${result ?? (ended ? 'closed' : 'waiting')}">${identity}<h2>${statusTitle}</h2>${statusDescription ? `<p>${statusDescription}</p>` : ''}</section>`}</main>`;
 }
 
 function render() {
   const focused = document.activeElement, focusId = focused?.id;
   const selection = focused && 'selectionStart' in focused ? [focused.selectionStart, focused.selectionEnd] : null;
-  document.body.classList.toggle('is-presenting', state.presenting);
-  document.body.classList.toggle('is-participant', state.role === 'participant');
+  const script = $('#manager-script');
+  if (script) scriptPosition = { id: script.dataset.scriptId, scroll: script.scrollTop };
+  document.body.classList.toggle('is-presenting', state.role === 'host' && state.presenting);
+  document.body.classList.toggle('is-participant', state.role !== 'host');
+  document.body.classList.toggle('is-manager', state.role === 'manager');
   document.body.classList.toggle('is-host', state.role === 'host');
+  document.body.classList.toggle('is-controller', state.role !== 'host' && interactionLocked());
+  document.documentElement.classList.toggle('is-interacting', interactionLocked());
   $('#app').innerHTML = state.role === 'host' ? hostView() : participantView();
   bindEvents();
-  for (const canvas of document.querySelectorAll('.invite-qr')) QRCode.toCanvas(canvas, inviteUrl(), { width: 420, margin: 2, color: { dark: '#201B13', light: '#ffffff' } }).catch(() => {});
+  const currentScript = $('#manager-script');
+  if (currentScript && currentScript.dataset.scriptId === scriptPosition?.id) currentScript.scrollTop = scriptPosition.scroll;
+  for (const canvas of document.querySelectorAll('.invite-qr')) QRCode.toCanvas(canvas, inviteUrl(), { width: 420, margin: 4, color: { dark: '#08121C', light: '#ffffff' } }).catch(() => {});
   if (focusId) { const input = document.getElementById(focusId); if (input) { input.focus({ preventScroll: true }); if (selection && input.setSelectionRange) input.setSelectionRange(...selection); } }
+  clearTimeout(revealTimer);
+  const { slide, game } = tasteContext(state.slideIndex);
+  if (state.presenting && slide.view === 'reveal' && game.control?.phase === 'revealed' && game.result) {
+    const remaining = game.result.revealedAt + Object.keys(game.result.order ?? {}).length * REVEAL_INTERVAL + 450 - Date.now() - state.serverOffset;
+    if (remaining > 0) revealTimer = setTimeout(schedule, remaining + 20);
+  }
+  animateScoreNumbers();
+}
+
+function animateScoreNumbers() {
+  cancelAnimationFrame(scoreFrame);
+  const { slide, game } = tasteContext(state.slideIndex);
+  if (state.role !== 'host' || !state.presenting || slide.view !== 'score') return;
+  const award = state.teamScores?.awards?.[game.control?.roundId];
+  if (!award) return;
+  const tick = () => {
+    const progress = Math.min(1, Math.max(0, (performance.now() - state.scoreEntryAt - 250) / 1400));
+    for (const node of document.querySelectorAll('[data-score-team]')) {
+      const team = node.dataset.scoreTeam;
+      node.textContent = Math.round(award.before[team] + (award.after[team] - award.before[team]) * progress);
+    }
+    if (progress < 1) scoreFrame = requestAnimationFrame(tick);
+  };
+  tick();
 }
 
 function chooseWinner() {
-  if (state.role !== 'host' || !state.presenting || state.slideIndex !== 1 || state.winner || !state.raceRoundId) return;
+  if (state.role !== 'host' || !state.presenting || state.slideIndex !== 1 || state.winner || state.finalizingWinner || !state.raceRoundId) return;
   const winner = firstTouch(state.responses, state.participants, state.raceRoundId);
   if (!winner) return;
-  state.winner = winner;
-  schedule();
-  // Freeze the visible result before closing the input window; later taps cannot replace it.
-  void api.setStage(state.room, 'closed').catch(showError);
+  const roundId = state.raceRoundId;
+  const resetAt = state.presentation?.resetAt;
+  state.finalizingWinner = true;
+  void api.completeTouchRound(state.room, state.raceRoundId, winner.id).then(result => {
+    state.finalizingWinner = false;
+    if (state.raceRoundId === roundId && state.presentation?.resetAt === resetAt) syncPresentation(result.snapshot.val());
+  }).catch(error => { state.finalizingWinner = false; showError(error); });
 }
 
 async function moveTo(index) {
+  const resetAt = state.presentation?.resetAt ?? null;
   if (index === 0) {
     state.raceRoundId = null; state.winner = null;
-    await api.setStage(state.room, 'join');
+    await api.setPresentation(state.room, true, resetAt);
     state.slideIndex = 0;
-  } else {
+  } else if (index === 1) {
     state.winner = null; state.raceRoundId = null;
-    const round = api.startTouchRound(state.room, Object.keys(state.participants));
+    const round = api.startTouchRound(state.room, Object.keys(state.participants), true, resetAt);
     state.raceRoundId = round.id; state.slideIndex = 1;
     schedule();
     await round.confirmed;
     chooseWinner();
+  } else {
+    const { key, slide } = tasteContext(index);
+    state.tasteGames[key] = await api.ensureTasteGame(state.room, state.participants, key, resetAt);
+    if (slide.view === 'score') state.teamScores = await api.awardTastePoints(state.room, key);
+    await api.setPresentationSlide(state.room, index, resetAt);
+    state.slideIndex = index;
+    state.winner = null; state.raceRoundId = null;
   }
   schedule();
 }
 async function advance(direction) {
-  if (!state.presenting || state.busy) return;
+  if (!state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden) return;
   const next = stageIndex(state.slideIndex, direction);
   if (next === state.slideIndex) return;
+  if (direction > 0 && nextBlocked()) return;
+  lockControls();
   state.busy = true;
   try { await moveTo(next); } catch (error) { showError(error); }
   finally { state.busy = false; schedule(); }
 }
 
 async function tap() {
-  const instruction = state.instruction;
-  if (!state.participantId || !state.online || state.tapping || !touchRoundIsActive(instruction, state.stage) || state.response?.instructionId === instruction.id) return;
+  const instruction = state.instruction, participantId = state.participantId;
+  if (!participantId || !state.responseReady || !state.online || state.tapping || state.screenStarting || state.controlsLocked || document.hidden || !touchRoundIsActive(instruction, state.stage)
+    || state.response?.instructionId === instruction.id || state.submittedRoundId === instruction.id
+    || touchRoundResult(instruction, state.stage, state.presentation, state.participantId)) return;
   state.tapping = true; schedule();
-  try { await api.acknowledge(state.room, state.participantId, instruction.id); state.submittedRoundId = instruction.id; }
+  try {
+    await api.acknowledge(state.room, participantId, instruction.id);
+    if (state.participantId === participantId && state.instruction?.id === instruction.id) state.submittedRoundId = instruction.id;
+  }
   catch (error) {
     // Another participant may have closed this round while this tap was in transit.
-    const stage = await api.read(state.room, 'stage').catch(() => state.stage);
-    if (state.instruction?.id === instruction.id && touchRoundIsActive(instruction, stage)) showError(error);
+    const [stage, presentation] = await Promise.all([
+      api.read(state.room, 'stage').catch(() => state.stage),
+      api.read(state.room, 'presentation').catch(() => state.presentation),
+    ]);
+    if (state.instruction?.id === instruction.id && touchRoundIsActive(instruction, stage) && !presentation?.winnerId) showError(error);
   }
   finally { state.tapping = false; schedule(); }
 }
 
-async function save() {
-  const roster = rosterFromInputs(state.rows, state.teamNames), title = state.title.trim();
-  if (!title || title.length > 60) throw { userMessage: '행사 이름을 1~60자로 입력해주세요.' };
-  for (const id of Object.keys(state.bindings)) if (!roster.participants[id]) throw { userMessage: '연결된 참가자를 삭제하려면 먼저 기기 연결을 해제해주세요.' };
-  await api.saveRoster(state.room, roster, title); state.dirty = false;
+async function voteTaste(optionId) {
+  const { key, slide, game, votes } = tasteContext();
+  const phase = game.control?.phase;
+  const prediction = phase === 'prediction-open';
+  if (!state.online || state.voting || state.controlsLocked || document.hidden || !state.participantId
+    || slide.view !== 'vote' || !['preference-open', 'prediction-open'].includes(phase)
+    || !(prediction ? votes.predictionReady : votes.preferenceReady) || (prediction ? votes.prediction : votes.preference)) return;
+  state.voting = true; state.error = ''; schedule();
+  try {
+    await api.submitTasteVote(state.room, state.participantId, prediction ? 'prediction' : 'preference', optionId, key);
+    if (state.tasteVotes[key] === votes) votes[prediction ? 'prediction' : 'preference'] = { optionId };
+  } catch { showError('투표를 제출하지 못했어요. 투표가 마감되었는지 또는 연결 상태를 확인해주세요.'); }
+  finally { state.voting = false; schedule(); }
 }
-async function action(name) {
+
+async function save() {
+  const submittedRows = JSON.stringify(state.rows);
+  let roster;
+  try { roster = count() ? rosterFromInputs(state.rows) : { participants: {}, nameIndex: {} }; }
+  catch (error) { throw { userMessage: error.message }; }
+  for (const id of Object.keys(state.bindings)) if (!roster.participants[id]) throw { userMessage: '연결된 참가자를 삭제하려면 먼저 기기 연결을 해제해주세요.' };
+  await api.saveRoster(state.room, roster, '마티니 MT');
+  if (JSON.stringify(state.rows) === submittedRows) {
+    state.rows = rowsFromParticipants(roster.participants);
+    state.dirty = false;
+    rememberRoster();
+  }
+}
+async function action(name, errorId) {
   state.error = '';
-  if (name === 'dismiss') { schedule(); return; }
-  if (name === 'controller-start') { await startController(); return; }
-  if (name === 'fullscreen') {
-    try { if (!document.documentElement.requestFullscreen) throw new Error(); await document.documentElement.requestFullscreen(); }
-    catch { showError('전체화면으로 전환할 수 없습니다. 컴퓨터에서는 F11을 사용하세요.'); }
+  if (name === 'previous' && state.presenting && state.slideIndex === 0) name = 'exit';
+  if (name === 'dismiss') {
+    state.gameError = '';
+    if (state.role === 'manager' && errorId) {
+      await api.clearOperatorError(state.room, errorId).catch(showError);
+    }
+    schedule();
     return;
   }
-  if (name === 'exit') { state.presenting = false; state.raceRoundId = null; state.winner = null; schedule(); await api.setStage(state.room, 'join').catch(showError); return; }
-  if (state.busy) return;
+  if (name === 'controller-start') { await startController(); return; }
+  if (name === 'previous' || name === 'next') { await advance(name === 'next' ? 1 : -1); return; }
+  if (name === 'fullscreen') {
+    if (state.screenStarting) return;
+    state.screenStarting = true;
+    schedule();
+    try { if (!document.documentElement.requestFullscreen) throw new Error(); await document.documentElement.requestFullscreen(); }
+    catch { showError('전체화면으로 전환할 수 없습니다. 컴퓨터에서는 F11을 사용하세요.'); }
+    finally { state.screenStarting = false; lockControls(); schedule(); }
+    return;
+  }
+  if (state.busy || state.controlsLocked || !state.online || document.hidden) return;
+  lockControls();
   state.busy = true; schedule();
   try {
-    if (name === 'save') await save();
-    if (name === 'present') { if (state.dirty || !Object.keys(state.participants).length) await save(); await moveTo(0); state.presenting = true; window.scrollTo(0, 0); }
+    if (name === 'reset' && state.role === 'host' && state.presenting) {
+      await api.resetPresentation(state.room);
+      state.gameError = '';
+    }
+    if (name === 'present') {
+      if (state.role === 'host') { await flushRoster(); await flushManager(); }
+      if (!count()) throw { userMessage: '참가자를 한 명 이상 입력해주세요.' };
+      await moveTo(0);
+      state.presenting = true;
+      window.scrollTo(0, 0);
+    }
+    if (name === 'exit') {
+      await api.setPresentation(state.room, false, state.presentation?.resetAt ?? null);
+      state.presenting = false; state.raceRoundId = null; state.winner = null;
+    }
+    if (['start-preference', 'stop-preference', 'start-prediction', 'stop-prediction', 'reveal-answer', 'reveal-taste'].includes(name)) {
+      const { key } = tasteContext();
+      state.tasteGames[key] = await api.changeTastePhase(state.room, name, key);
+    }
+    if (name === 'release-manager' && state.managerBinding) await api.releaseManager(state.room, state.managerBinding.uid);
   } catch (error) { showError(error); }
   finally { state.busy = false; schedule(); }
 }
 
 function bindEvents() {
-  document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action); }));
-  document.querySelectorAll('[data-person]').forEach(input => input.addEventListener('input', () => { const [team, number] = input.dataset.person; state.rows[team][Number(number) - 1] = input.value; state.dirty = true; $(`#count-${team}`).textContent = `${state.rows[team].filter(name => name.trim()).length} / 6`; $('#total-count').textContent = count(); }));
-  document.querySelectorAll('[data-team-name]').forEach(input => input.addEventListener('input', () => { state.teamNames[input.dataset.teamName] = input.value; state.dirty = true; }));
-  $('#event-title')?.addEventListener('input', event => { state.title = event.target.value; state.dirty = true; });
+  document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
+  document.querySelectorAll('[data-vote]').forEach(control => control.addEventListener('click', () => { void voteTaste(control.dataset.vote); }));
+  const script = $('#manager-script');
+  if (script) {
+    let startX, startScroll;
+    const direction = script.closest('.manager-controller').dataset.rotation === 'clockwise' ? -1 : 1;
+    script.addEventListener('pointerdown', event => {
+      if (!event.isPrimary || event.button !== 0) return;
+      startX = event.clientX;
+      startScroll = script.scrollTop;
+      script.setPointerCapture(event.pointerId);
+    });
+    // The rotated panel's vertical axis follows the landscape viewport's horizontal axis.
+    script.addEventListener('pointermove', event => {
+      if (!script.hasPointerCapture(event.pointerId)) return;
+      script.scrollTop = startScroll + (startX - event.clientX) * direction;
+    });
+  }
+  $('#manager-name')?.addEventListener('input', event => {
+    state.managerName = event.target.value;
+    state.managerDirty = true;
+    state.managerError = '';
+    local.set(managerStorageKey, state.managerName);
+    local.set(`${managerStorageKey}.pending`, 'true');
+    queueManagerSave();
+    $('#manager-status').textContent = managerStatus();
+  });
+  document.querySelectorAll('[data-person]').forEach(input => input.addEventListener('input', () => {
+    const [team, number] = input.dataset.person;
+    state.rows[team][Number(number) - 1] = input.value;
+    state.dirty = true;
+    state.rosterError = '';
+    rememberRoster();
+    queueRosterSave();
+    $(`#count-${team}`).textContent = `${state.rows[team].filter(name => name.trim()).length} / 6`;
+    $('#total-count').textContent = count();
+    $('#roster-status').textContent = rosterStatus();
+  }));
   $('#real-name')?.addEventListener('input', event => { state.name = event.target.value; state.choices = null; });
   $('#name-form')?.addEventListener('submit', join);
   document.querySelectorAll('[data-release]').forEach(control => control.addEventListener('click', async () => {
     const id = control.dataset.release;
-    if (confirm(`${state.participants[id].name} 님의 기기 연결을 해제할까요?`)) { try { await api.releaseParticipant(state.room, id, state.bindings[id].uid); } catch (error) { showError(error); } }
+    if (confirm(`${state.participants[id].name} 님의 기기 연결을 해제할까요?`)) { try { await api.releaseParticipant(state.room, id, state.bindings[id].uid); queueRosterSave(); } catch (error) { showError(error); } }
   }));
   $('#tap-target')?.addEventListener('pointerdown', event => { if (event.isPrimary && event.button === 0) { event.preventDefault(); void tap(); } });
   $('#tap-target')?.addEventListener('click', event => { if (event.detail === 0) void tap(); });
@@ -189,12 +618,15 @@ function bindEvents() {
 
 async function join(event) {
   event.preventDefault(); if (state.busy) return;
+  $('#real-name')?.blur();
   state.error = ''; state.busy = true;
   const chosen = $('#person-choice')?.value; schedule();
   try {
     if (chosen && state.choices?.[chosen]) await api.claimParticipant(state.room, chosen, state.uid);
     else {
       if (!state.name.trim()) throw { userMessage: '본인의 실명을 입력해주세요.' };
+      const manager = await api.lookupManager(state.room, state.name).catch(() => null);
+      if (manager) { await api.claimManager(state.room, state.name, state.uid); return; }
       const choices = await api.lookupName(state.room, state.name);
       if (!choices || !Object.keys(choices).length) throw { userMessage: '등록된 이름을 찾지 못했어요. 진행자에게 알려주세요.' };
       if (Object.keys(choices).length > 1) { state.choices = choices; return; }
@@ -213,22 +645,169 @@ async function syncPresence() {
 }
 function attachParticipant(id) {
   participantStops.forEach(stop => stop()); participantStops = []; state.participantId = id;
-  if (!id) { presenceEpoch++; presenceClose?.().catch(() => {}); presenceClose = null; state.participant = null; state.instruction = null; state.response = null; schedule(); return; }
+  state.participant = null; state.instruction = null; state.response = null; state.responseReady = false; state.submittedRoundId = null;
+  state.tasteGames = {}; state.tasteVotes = {};
+  if (!id) { watchActiveTaste(); presenceEpoch++; presenceClose?.().catch(() => {}); presenceClose = null; state.participant = null; state.instruction = null; state.response = null; schedule(); return; }
   participantStops.push(api.watch(state.room, `participants/${id}`, person => { state.participant = person; void syncPresence(); schedule(); }, showError));
   participantStops.push(api.watch(state.room, `instructions/${id}`, instruction => { state.instruction = instruction; schedule(); }, showError));
-  participantStops.push(api.watch(state.room, `responses/${id}`, response => { state.response = response; schedule(); }, showError));
+  participantStops.push(api.watch(state.room, `responses/${id}`, response => { state.response = response; state.responseReady = true; schedule(); }, showError));
+  watchActiveTaste();
 }
 
+function watchActiveTaste() {
+  const { key } = tasteContext();
+  const watchKey = `${state.role}:${state.participantId ?? ''}:${key}`;
+  if (watchKey === tasteWatchKey) return;
+  tasteStops.forEach(stop => stop()); tasteStops = []; tasteWatchKey = null;
+  if (!state.uid || !state.room || (state.role === 'participant' && !state.participantId)) return;
+  tasteWatchKey = watchKey;
+  const { path } = TASTE_ROUNDS[key];
+  if (state.role === 'participant') {
+    state.tasteGames[key] ??= {}; state.tasteVotes[key] ??= {};
+    for (const field of ['control', 'options']) tasteStops.push(api.watch(state.room, `${path}/${field}`, value => { state.tasteGames[key][field] = value; schedule(); }, showError));
+    for (const kind of ['preference', 'prediction']) tasteStops.push(api.watch(state.room, `${path}/${kind}Votes/${state.participantId}`, value => { state.tasteVotes[key][kind] = value; state.tasteVotes[key][`${kind}Ready`] = true; schedule(); }, showError));
+  } else {
+    tasteStops.push(api.watch(state.room, path, value => { state.tasteGames[key] = value ?? {}; state.gameError = ''; schedule(); }, showGameError));
+  }
+}
+
+function syncPresentation(presentation) {
+  if (presentation?.resetAt !== state.presentation?.resetAt) {
+    state.submittedRoundId = null;
+    state.instruction = null;
+    state.response = null;
+    state.tasteGames = {};
+    state.tasteVotes = {};
+    state.teamScores = null;
+    tasteWatchKey = null;
+    state.operatorError = null;
+    state.error = '';
+    state.gameError = '';
+    scriptPosition = null;
+  }
+  state.presentation = presentation;
+  if (presentation && state.role !== 'participant') {
+    if (STAGES[presentation.slideIndex]?.view === 'score' && state.slideIndex !== presentation.slideIndex) state.scoreEntryAt = performance.now();
+    state.presenting = presentation.active;
+    state.slideIndex = presentation.slideIndex;
+    const person = state.participants[presentation.winnerId];
+    if (person && (state.raceRoundId !== presentation.roundId || state.winner?.id !== presentation.winnerId)) state.winnerRevealedAt = performance.now();
+    state.raceRoundId = presentation.roundId ?? null;
+    state.winner = person ? { id: presentation.winnerId, ...person } : null;
+    chooseWinner();
+  }
+  watchActiveTaste();
+  schedule();
+}
+
+function watchManagement() {
+  managementStops.forEach(stop => stop());
+  managementStops = [api.watch(state.room, 'participants', value => {
+    state.participants = value ?? {};
+    if (state.role === 'manager') state.rows = rowsFromParticipants(state.participants);
+    else if (!state.dirty) {
+      if (!Object.keys(state.participants).length && (cachedRoster || localRoster)) {
+        state.rows = (cachedRoster ?? localRoster).rows;
+        state.dirty = count() > 0;
+      } else state.rows = rowsFromParticipants(state.participants);
+      rememberRoster();
+    }
+    if (!state.ready) { state.ready = true; queueRosterSave(); queueManagerSave(); }
+    syncPresentation(state.presentation);
+  }, showError)];
+  for (const key of ['bindings', 'presence']) managementStops.push(api.watch(state.room, key, value => { state[key] = value ?? {}; schedule(); }, showError));
+  watchActiveTaste();
+  managementStops.push(api.watch(state.room, 'teamScores', value => { state.teamScores = value; schedule(); }, showGameError));
+  managementStops.push(api.watch(state.room, 'operatorError', value => { state.operatorError = value; schedule(); }, showError));
+  if (state.role === 'host') managementStops.push(api.watch(state.room, 'responses', value => { state.responses = value ?? {}; chooseWinner(); schedule(); }, showError));
+}
+
+function attachManager(device) {
+  if (device) {
+    state.role = 'manager';
+    state.ready = true;
+    state.error = '';
+    void api.read(state.room, `managerLookup/${device.nameKey}`).then(value => { state.managerName = value?.name ?? state.name; schedule(); }).catch(showError);
+    watchManagement();
+    syncPresentation(state.presentation);
+  } else if (state.role === 'manager') {
+    managementStops.forEach(stop => stop()); managementStops = [];
+    state.role = 'participant'; state.participants = {}; state.bindings = {}; state.presence = {};
+    state.presenting = false; state.winner = null; state.error = ''; state.gameError = ''; state.operatorError = null; state.name = '';
+    watchActiveTaste();
+    schedule();
+  }
+}
+
+document.addEventListener('pointerdown', event => {
+  if (!interactionLocked() || state.role === 'participant') return;
+  if (!event.isPrimary) {
+    if (pointerGesture) pointerGesture.moved = true;
+    suppressClickUntil = performance.now() + 400;
+    return;
+  }
+  suppressClickUntil = 0;
+  pointerGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+}, true);
+document.addEventListener('pointermove', event => {
+  if (pointerGesture?.id === event.pointerId && Math.hypot(event.clientX - pointerGesture.x, event.clientY - pointerGesture.y) > 12) pointerGesture.moved = true;
+}, true);
+document.addEventListener('pointerup', event => {
+  if (pointerGesture?.id !== event.pointerId) return;
+  if (pointerGesture.moved) suppressClickUntil = performance.now() + 400;
+  pointerGesture = null;
+  schedule();
+}, true);
+function cancelPointerGesture() {
+  if (pointerGesture) suppressClickUntil = performance.now() + 400;
+  pointerGesture = null;
+  schedule();
+}
+document.addEventListener('pointercancel', cancelPointerGesture, true);
+window.addEventListener('blur', cancelPointerGesture);
+document.addEventListener('click', event => {
+  if (interactionLocked() && event.detail > 0 && performance.now() < suppressClickUntil) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+}, true);
+function preventViewportGesture(event) {
+  if (interactionLocked() && event.cancelable) event.preventDefault();
+}
+for (const name of ['gesturestart', 'gesturechange', 'gestureend', 'touchmove', 'dblclick', 'dragstart', 'selectstart']) {
+  document.addEventListener(name, preventViewportGesture, { passive: false });
+}
+document.addEventListener('touchstart', event => {
+  if (event.touches.length > 1) preventViewportGesture(event);
+}, { passive: false });
+document.addEventListener('wheel', event => {
+  if (event.ctrlKey || event.metaKey) preventViewportGesture(event);
+}, { passive: false });
+
 document.addEventListener('compositionstart', () => { composing = true; });
-document.addEventListener('compositionend', () => { composing = false; schedule(); });
-document.addEventListener('fullscreenchange', schedule);
-window.addEventListener('resize', schedule);
-screen.orientation?.addEventListener('change', schedule);
+document.addEventListener('compositionend', () => { composing = false; queueRosterSave(); queueManagerSave(); schedule(); });
+function controllerViewportChanged() {
+  if (document.activeElement?.id === 'real-name') return;
+  schedule();
+}
+document.addEventListener('fullscreenchange', controllerViewportChanged);
+window.addEventListener('resize', controllerViewportChanged);
+screen.orientation?.addEventListener('change', controllerViewportChanged);
 const controlTarget = target => target instanceof Element && target.closest('button, a, input, textarea, select, dialog, [data-no-slide]');
-document.addEventListener('click', event => { if (state.presenting && event.button === 0 && !controlTarget(event.target) && !window.getSelection()?.toString()) void advance(1); });
-document.addEventListener('contextmenu', event => { if (state.presenting) { event.preventDefault(); if (!controlTarget(event.target)) void advance(-1); } });
+document.addEventListener('click', event => { if (state.role === 'host' && state.presenting && event.button === 0 && event.detail < 2 && !controlTarget(event.target) && !window.getSelection()?.toString()) void advance(1); });
+document.addEventListener('contextmenu', event => {
+  if (state.role !== 'host' || !state.presenting) {
+    if (interactionLocked() || state.controlsLocked) event.preventDefault();
+    return;
+  }
+  event.preventDefault();
+  if (controlTarget(event.target)) return;
+  if (state.slideIndex === 0) void action('exit');
+  else void advance(-1);
+});
 document.addEventListener('keydown', event => {
-  if (!state.presenting) return;
+  if (state.role !== 'host' || !state.presenting) return;
+  if (event.repeat && ['Escape', 'ArrowRight', 'ArrowLeft', 'PageUp', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); return; }
   if (event.key === 'Escape' && !document.fullscreenElement) { event.preventDefault(); void action('exit'); }
   else if (!controlTarget(event.target) && ['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); void advance(1); }
   else if (!controlTarget(event.target) && ['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); void advance(-1); }
@@ -238,7 +817,13 @@ async function start() {
   render();
   try {
     state.uid = await api.connect();
-    api.watchConnection(online => { state.online = online; if (!online) { presenceEpoch++; presenceClose = null; } else void syncPresence(); schedule(); });
+    api.watchServerOffset(offset => { state.serverOffset = offset; schedule(); });
+    api.watchConnection(online => {
+      state.online = online;
+      if (!online) { presenceEpoch++; presenceClose = null; }
+      else { void syncPresence(); queueRosterSave(); queueManagerSave(); }
+      schedule();
+    });
     if (state.role === 'host') {
       state.room = local.get('martini.host-room');
       if (state.room) { const meta = await api.read(state.room, 'meta'); if (!meta || meta.ownerUid !== state.uid) state.room = null; }
@@ -246,18 +831,30 @@ async function start() {
     }
     const meta = await api.read(state.room, 'meta');
     if (!meta) throw { userMessage: '행사를 찾을 수 없습니다. QR을 다시 스캔해주세요.' };
-    state.meta = meta; state.title = meta.title; state.ready = true;
+    state.meta = meta;
+    state.ready = state.role === 'participant';
     api.watch(state.room, 'meta', value => { state.meta = value; schedule(); }, showError);
     api.watch(state.room, 'stage', value => { state.stage = value ?? { step: 'setup' }; schedule(); }, showError);
+    api.watch(state.room, 'presentation', syncPresentation, showError);
     if (state.role === 'host') {
-      api.watch(state.room, 'participants', value => {
-        state.participants = value ?? {};
-        if (!state.dirty) { for (const team of TEAM_IDS) state.rows[team] = Array.from({ length: 6 }, (_, i) => state.participants[`${team}${i + 1}`]?.name ?? ''); for (const person of Object.values(state.participants)) state.teamNames[person.team] = person.teamName; }
+      state.bindings = await api.read(state.room, 'bindings') ?? {};
+      watchManagement();
+      api.watch(state.room, 'managerLookup', value => {
+        const savedName = Object.values(value ?? {})[0]?.name ?? '';
+        if (!state.managerDirty) {
+          if (!savedName && state.managerName) state.managerDirty = true;
+          else state.managerName = savedName;
+          local.set(managerStorageKey, state.managerName);
+        }
+        state.managerError = '';
+        queueManagerSave();
         schedule();
-      }, showError);
-      for (const key of ['bindings', 'presence']) api.watch(state.room, key, value => { state[key] = value ?? {}; schedule(); }, showError);
-      api.watch(state.room, 'responses', value => { state.responses = value ?? {}; chooseWinner(); schedule(); }, showError);
-    } else api.watch(state.room, `devices/${state.uid}`, value => { if ((value?.participantId ?? null) !== state.participantId) attachParticipant(value?.participantId ?? null); }, showError);
+      }, () => { state.managerError = '관리자 기능은 Firebase 권한 규칙 반영 후 사용할 수 있습니다.'; schedule(); });
+      api.watch(state.room, 'managerBinding', value => { state.managerBinding = value; schedule(); }, () => {});
+    } else {
+      api.watch(state.room, `managerDevices/${state.uid}`, attachManager, () => {});
+      api.watch(state.room, `devices/${state.uid}`, value => { if ((value?.participantId ?? null) !== state.participantId) attachParticipant(value?.participantId ?? null); }, showError);
+    }
     schedule();
   } catch (error) { showError(error); }
 }
