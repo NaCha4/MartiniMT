@@ -3,7 +3,9 @@ import { TEAM_IDS } from './event-model.js';
 export const YUT_WIDTH = 1000;
 export const YUT_HEIGHT = 680;
 export const YUT_WIN_POINTS = 300;
-export const YUT_DISPLAY_BOARD = { left: 45, right: 955, top: 45, bottom: 535 };
+const DROP_MARGIN = 32;
+const RETURN_Y = 624;
+export const YUT_DISPLAY_BOARD = { left: 220, right: 780, top: 60, bottom: 620 };
 export const YUT_PIECE_IDS = TEAM_IDS.flatMap(team => [1, 2, 3, 4].map(number => `${team}${number}`));
 export const YUT_NODES = [
   ...Array.from({ length: 5 }, (_, index) => [240 + index * 104, 80]),
@@ -40,7 +42,10 @@ export function normalizeYutPieces(pieces) {
 }
 
 export function yutDisplayPosition(position, id) {
-  if (!isYutBoardPosition(position)) return { x: 70 + TEAM_IDS.indexOf(id[0]) * 240 + (Number(id[1]) - 1) * 50, y: 626 };
+  if (!isYutBoardPosition(position)) {
+    const team = TEAM_IDS.indexOf(id[0]), number = Number(id[1]) - 1;
+    return { x: (team < 2 ? 60 : 875) + (number % 2) * 65, y: (team % 2 ? 460 : 190) + Math.floor(number / 2) * 70 };
+  }
   return {
     x: YUT_DISPLAY_BOARD.left + (position.x - 240) / 520 * (YUT_DISPLAY_BOARD.right - YUT_DISPLAY_BOARD.left),
     y: YUT_DISPLAY_BOARD.top + (position.y - 80) / 520 * (YUT_DISPLAY_BOARD.bottom - YUT_DISPLAY_BOARD.top),
@@ -67,7 +72,8 @@ export function moveYutPiece(pieces, id, position) {
   if (!pieces?.[id] || !Number.isFinite(position.x) || !Number.isFinite(position.y)) throw new Error('말의 위치를 확인해주세요.');
   pieces = normalizeYutPieces(pieces);
   const moving = yutStacks(pieces).find(stack => stack.ids.includes(id));
-  if (!isYutBoardPosition(position)) return { pieces, captured: 0, stackSize: moving.ids.length };
+  if (position.y >= RETURN_Y) return { pieces: { ...pieces, ...Object.fromEntries(moving.ids.map(key => [key, yutHome(key)])) }, captured: 0, stackSize: 1 };
+  if (position.x < 240 - DROP_MARGIN || position.x > 760 + DROP_MARGIN || position.y < 80 - DROP_MARGIN) return { pieces, captured: 0, stackSize: moving.ids.length };
   const { x, y } = nearestYutNode(position);
   const stationary = yutStacks(pieces).filter(stack => stack.id !== moving.id && isYutBoardPosition(stack));
   const next = Object.fromEntries(Object.entries(pieces).map(([key, piece]) => [key, { ...piece }]));

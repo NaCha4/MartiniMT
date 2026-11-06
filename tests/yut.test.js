@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createYutPieces, moveYutPiece, splitYutStack, yutPoints, yutStacks, yutHome, YUT_NODES, normalizeYutPieces, yutDisplayPosition, yutBoardPosition } from '../src/yut-model.js';
+import { createYutPieces, moveYutPiece, splitYutStack, yutPoints, yutStacks, yutHome, YUT_NODES, YUT_DISPLAY_BOARD, normalizeYutPieces, yutDisplayPosition, yutBoardPosition } from '../src/yut-model.js';
 import { STAGES, stageIndex } from '../src/event-model.js';
 import { scoreAward } from '../src/taste-model.js';
 import { yutAward, yutPresentation } from '../src/yut-view.js';
@@ -9,6 +9,7 @@ test('yut appends a free board and four award screens without changing earlier s
   const index = STAGES.findIndex(stage => stage.id === 'reaction-score');
   assert.equal(STAGES[stageIndex(index, 1)].id, 'yut-intro');
   assert.equal(YUT_NODES.length, 29);
+  assert.equal(YUT_DISPLAY_BOARD.right - YUT_DISPLAY_BOARD.left, YUT_DISPLAY_BOARD.bottom - YUT_DISPLAY_BOARD.top);
   assert.equal(Object.keys(createYutPieces()).length, 16);
   assert.deepEqual(STAGES.filter(stage => stage.game === 'yut').map(stage => stage.screenCode), [68, 69, 70, 71, 72, 73, 74]);
   assert.match(yutPresentation({}, { view: 'intro' }), /300점/);
@@ -38,9 +39,14 @@ test('off-board drops cannot place, stack, or capture pieces, including in the r
   assert.deepEqual(moveYutPiece(initial, 'A1', yutHome('A2')).pieces, initial);
   assert.deepEqual(moveYutPiece(initial, 'A1', yutHome('B1')).pieces, initial);
   const onBoard = moveYutPiece(initial, 'A1', { x: 500, y: 340 }).pieces;
-  for (const position of [{ x: 239, y: 340 }, { x: 761, y: 340 }, { x: 500, y: 79 }, { x: 500, y: 601 }]) {
+  for (const position of [{ x: 207, y: 340 }, { x: 793, y: 340 }, { x: 500, y: 47 }]) {
     assert.deepEqual(moveYutPiece(onBoard, 'A1', position).pieces, onBoard);
   }
+  assert.deepEqual(moveYutPiece(onBoard, 'A1', { x: 220, y: 80 }).pieces.A1, { x: 240, y: 80, stack: 'A1' });
+  const stacked = moveYutPiece(onBoard, 'A2', { x: 500, y: 340 }).pieces;
+  const returned = moveYutPiece(stacked, 'A1', { x: 500, y: 650 }).pieces;
+  assert.deepEqual(returned.A1, yutHome('A1'));
+  assert.deepEqual(returned.A2, yutHome('A2'));
   assert.deepEqual(yutBoardPosition(yutDisplayPosition({ x: 240, y: 80 }, 'A1')), { x: 240, y: 80 });
   const legacy = { ...initial, A2: { ...initial.A1, stack: 'A1' } };
   assert.deepEqual(normalizeYutPieces(legacy), initial);

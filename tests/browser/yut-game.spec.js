@@ -28,9 +28,23 @@ test('yut dragging, stacking, capture, reload, one-time scoring and all four awa
     await expect(host.locator('.yut-intro')).toBeVisible();
     await remote.getByRole('button', { name: '다음 화면', exact: true }).click();
     await expect(host.locator('[data-yut-piece]')).toHaveCount(16);
-    await expect.poll(() => host.locator('[data-yut-board]').evaluate(element => element.getBoundingClientRect().width / innerWidth)).toBeGreaterThan(.97);
-    await expect.poll(() => host.locator('[data-yut-board]').evaluate(element => element.getBoundingClientRect().height / innerHeight)).toBeGreaterThan(.88);
+    for (const viewport of [{ width: 1440, height: 960 }, { width: 1280, height: 720 }]) {
+      await host.setViewportSize(viewport);
+      await expect.poll(() => host.locator('.yut-surface').evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return Math.abs(rect.width / rect.height - 1);
+      })).toBeLessThan(.001);
+      await expect.poll(() => host.locator('.yut-surface').evaluate(element => element.getBoundingClientRect().height / innerHeight)).toBeGreaterThan(.75);
+    }
+    await host.setViewportSize({ width: 1440, height: 960 });
 
+    async function expectPosition(id, expected) {
+      await expect.poll(() => host.evaluate(async id => {
+        const api = await import('/src/event-data.js');
+        return (await api.read(localStorage.getItem('martini.host-room'), 'yutGame')).pieces[id];
+      }, id)).toMatchObject(expected);
+      await expect(host.locator('[data-yut-piece]:disabled')).toHaveCount(0);
+    }
     async function drag(id, x, y, expected = { x, y }) {
       const piece = host.locator(`[data-yut-piece="${id}"]`);
       await expect(piece).toBeEnabled();
@@ -40,16 +54,19 @@ test('yut dragging, stacking, capture, reload, one-time scoring and all four awa
       const target = y >= 80 && y <= 600 && x >= 240 && x <= 760 ? yutDisplayPosition({ x, y }, id) : { x, y };
       await host.mouse.move(board.x + target.x / 1000 * board.width, board.y + target.y / 680 * board.height, { steps: 8 });
       await host.mouse.up();
-      await expect.poll(() => host.evaluate(async id => {
-        const api = await import('/src/event-data.js');
-        return (await api.read(localStorage.getItem('martini.host-room'), 'yutGame')).pieces[id];
-      }, id)).toMatchObject(expected);
-      await expect(host.locator('[data-yut-piece]:disabled')).toHaveCount(0);
+      await expectPosition(id, expected);
     }
     await drag('A1', 500, 650, yutHome('A1'));
+    await host.locator('[data-yut-piece="A1"]').click();
+    await expect(host.locator('[data-yut-piece="A1"]')).toHaveAttribute('aria-pressed', 'true');
+    await host.locator('.yut-node.is-center').click();
+    await expectPosition('A1', { x: 500, y: 340 });
+    await drag('A1', 500, 650, yutHome('A1'));
     await drag('A1', 500, 340);
-    await drag('A1', 500, 650, { x: 500, y: 340 });
-    await drag('A2', 500, 340);
+    await drag('A1', 5, 30, { x: 500, y: 340 });
+    await host.locator('[data-yut-piece="A2"]').click();
+    await host.locator('[data-yut-piece="A1"]').click();
+    await expectPosition('A2', { x: 500, y: 340 });
     await expect(host.locator('[data-yut-piece="A1"]')).toContainText('×2');
     await expect(host.locator('[data-yut-piece]')).toHaveCount(15);
     await host.locator('[data-yut-piece="A1"]').click({ button: 'right' });
@@ -59,11 +76,11 @@ test('yut dragging, stacking, capture, reload, one-time scoring and all four awa
     await expect(host.locator('[data-yut-piece="B1"]')).toContainText('×2');
     await drag('A1', 240, 80);
     await expect(host.locator('[data-yut-piece]')).toHaveCount(16);
-    await expect.poll(() => host.locator('[data-yut-piece="B1"]').evaluate(element => element.style.left)).toBe('31%');
+    await expect.poll(() => host.locator('[data-yut-piece="B1"]').evaluate(element => element.style.left)).toBe('6%');
     await host.screenshot({ path: '.cache/screenshots/yut-board.png' });
     await host.reload();
     await expect(host.locator('[data-yut-piece="A1"]')).toHaveCSS('left', /px$/);
-    await expect.poll(() => host.locator('[data-yut-piece="A1"]').evaluate(element => element.style.left)).toBe('4.5%');
+    await expect.poll(() => host.locator('[data-yut-piece="A1"]').evaluate(element => element.style.left)).toBe('22%');
 
     await environment.withSecurityRulesDisabled(async context => {
       const totals = { A: 350, B: 200, C: 100, D: 50 };
