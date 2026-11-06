@@ -622,6 +622,7 @@ function participantView() {
 function render() {
   const previousPhoto = $('.zoom-photo');
   const previousYutBoard = $('[data-yut-board]');
+  const previousQr = $('.invite-qr');
   const previousQuestion = previousPhoto?.closest('[data-question]')?.dataset.question;
   const focused = document.activeElement, focusId = focused?.id;
   const selection = Number.isInteger(focused?.selectionStart) ? [focused.selectionStart, focused.selectionEnd] : null;
@@ -653,7 +654,14 @@ function render() {
   });
   const currentScript = $('#manager-script');
   if (currentScript && currentScript.dataset.scriptId === scriptPosition?.id) currentScript.scrollTop = scriptPosition.scroll;
-  for (const canvas of document.querySelectorAll('.invite-qr')) QRCode.toCanvas(canvas, inviteUrl(), { width: 420, margin: 4, color: { dark: '#08121C', light: '#ffffff' } }).catch(() => {});
+  for (const canvas of document.querySelectorAll('.invite-qr')) {
+    const url = inviteUrl();
+    if (previousQr?.dataset.inviteUrl === url) canvas.replaceWith(previousQr);
+    else {
+      QRCode.toCanvas(canvas, url, { width: 420, margin: 4, color: { dark: '#08121C', light: '#ffffff' } })
+        .then(() => { canvas.dataset.inviteUrl = url; }).catch(() => {});
+    }
+  }
   if (focusId) { const input = document.getElementById(focusId); if (input) { input.focus({ preventScroll: true }); if (selection && input.setSelectionRange) input.setSelectionRange(...selection); } }
   clearTimeout(revealTimer);
   const { slide, game } = tasteContext(state.slideIndex);
@@ -958,8 +966,9 @@ function scheduleLiarProgress() {
       if (result.committed) syncPresentation(result.snapshot.val());
       liarPendingId = null; liarRetryAt = 0;
     } catch (error) {
-      liarRetryAt = Date.now() + 1500;
-      if (stillCurrent()) showGameError(error);
+      const pending = error.code === 'liar/reveal-pending';
+      liarRetryAt = Date.now() + (pending ? 50 : 1500);
+      if (stillCurrent() && !pending) showGameError(error);
     } finally { liarAdvancing = false; state.busy = false; schedule(); }
   }, Math.max(10, round.result.revealedAt + LIAR_REVEAL_DURATION - Date.now() - state.serverOffset, liarRetryAt - Date.now()));
 }
@@ -1086,7 +1095,7 @@ async function action(name, errorId) {
     finally { state.screenStarting = false; lockControls(); schedule(); }
     return;
   }
-  if (state.busy || state.controlsLocked || !state.online || document.hidden) return;
+  if (state.busy || (state.controlsLocked && name !== 'exit') || !state.online || document.hidden) return;
   lockControls();
   state.busy = true; schedule();
   try {

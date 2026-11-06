@@ -111,8 +111,10 @@ for (const count of [1, 4]) test(`${count} number-game entrants finish three pri
       expect(Object.keys(snapshot.scores.awards)).toHaveLength(index + 1);
       if (index === 2) expect(snapshot.scores.totals).toEqual(count === 1 ? { A: 170, B: 0, C: 0, D: 0 } : { A: 0, B: 0, C: 80, D: 100 });
     }
-    await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+    await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeEnabled();
     await expect(host.getByRole('heading', { name: '눈치 게임 최종 점수', exact: true })).toBeVisible();
+    await remote.getByRole('button', { name: '다음 화면', exact: true }).click();
+    await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'memory-intro');
     await remote.getByRole('button', { name: '설정', exact: true }).click();
     await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();

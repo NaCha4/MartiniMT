@@ -224,3 +224,18 @@ test('an early reveal timer waits again without reporting a scoring error', asyn
   await transition.timers.at(-1).callback();
   assert.deepEqual(transition.calls, ['award', 'follow']);
 });
+
+test('a pending server reveal retries without leaving an operator error', async () => {
+  const transition = revealTransition({ now: 3000 });
+  const award = transition.context.api.awardLiarPoints;
+  transition.context.api.awardLiarPoints = async () => { throw { code: 'liar/reveal-pending' }; };
+  await transition.timers[0].callback();
+  assert.deepEqual(transition.errors, []);
+  assert.equal(transition.state.busy, false);
+  transition.context.api.awardLiarPoints = award;
+  transition.context.scheduleLiarProgress();
+  assert.equal(transition.timers.at(-1).delay, 50);
+  transition.setNow(3050);
+  await transition.timers.at(-1).callback();
+  assert.deepEqual(transition.calls, ['award', 'follow']);
+});

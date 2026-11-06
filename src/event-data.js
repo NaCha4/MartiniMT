@@ -46,6 +46,8 @@ export const setStage = (room, step) => set(locationRef(room, 'stage'), { step, 
 export async function lookupName(room, name) { return read(room, `nameIndex/${nameKey(name)}`); }
 export async function lookupManager(room, name) { return read(room, `managerLookup/${nameKey(name)}`); }
 export async function saveManagerName(room, name) {
+  const current = await read(room, 'managerLookup');
+  if (name && Object.keys(current ?? {}).length === 1 && current[nameKey(name)]?.name === name) return;
   await update(locationRef(room), {
     managerLookup: name ? { [nameKey(name)]: { name } } : null,
     managerBinding: null,
@@ -403,7 +405,7 @@ export const submitLiarVote = (room, voterId, questionIndex, participantId, roun
 export async function awardLiarPoints(room, questionIndex, now = Date.now()) {
   const game = await read(room, 'liarGame');
   const round = game?.rounds?.[questionIndex];
-  if (!liarRevealFinished(round, now)) throw { userMessage: '라이어 공개 애니메이션이 끝난 뒤 점수를 반영합니다.' };
+  if (!liarRevealFinished(round, now)) throw { code: 'liar/reveal-pending', userMessage: '라이어 공개 애니메이션이 끝난 뒤 점수를 반영합니다.' };
   const result = await transactLoaded(locationRef(room, 'teamScores'), current => {
     if (current?.awards?.[round.roundId]) return;
     return { ...scoreAward(current, round.roundId, round.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };

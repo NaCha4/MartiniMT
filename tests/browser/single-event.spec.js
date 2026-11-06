@@ -71,7 +71,7 @@ test('fixed event restores quizzes across managers and keeps participants out of
     await expect(first.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
     await first.evaluate(async () => {
       const api = await import('/src/event-data.js');
-      const room = localStorage.getItem('martini.host-room');
+      const room = api.fixedRoom ?? localStorage.getItem('martini.host-room');
       const presentation = await api.read(room, 'presentation');
       const participants = await api.read(room, 'participants');
       await api.startTouchRound(room, Object.keys(participants), true, presentation.resetAt ?? null).confirmed;
@@ -83,7 +83,7 @@ test('fixed event restores quizzes across managers and keeps participants out of
     await expect(second.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
     await second.evaluate(async () => {
       const api = await import('/src/event-data.js');
-      const room = localStorage.getItem('martini.host-room');
+      const room = api.fixedRoom ?? localStorage.getItem('martini.host-room');
       const presentation = await api.read(room, 'presentation');
       await api.setPresentation(room, false, presentation.resetAt ?? null);
     });

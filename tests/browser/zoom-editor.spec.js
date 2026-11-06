@@ -5,6 +5,7 @@ test('uploaded photos and selected zoom framing survive save and match the prese
   await page.goto('/');
   await expect(page.locator('#name-A1')).toBeEnabled();
   await page.locator('#name-A1').fill('사진 참가자');
+  await expect(page.locator('#roster-status')).toHaveText('자동 저장됨');
   const card = page.locator('[data-zoom-card="0"]');
   await card.locator('[data-zoom-image]').setInputFiles(fileURLToPath(new URL('../../src/assets/soju/chamisul.jpg', import.meta.url)));
   await expect(card.locator('[data-zoom-source] img')).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
@@ -14,7 +15,7 @@ test('uploaded photos and selected zoom framing survive save and match the prese
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
   const source = card.locator('[data-zoom-source]');
-  await source.scrollIntoViewIfNeeded();
+  await expect(async () => { await source.scrollIntoViewIfNeeded(); }).toPass();
   const bounds = await source.boundingBox();
   await page.mouse.move(bounds.x + bounds.width * .5, bounds.y + bounds.height * .5);
   await page.mouse.down();

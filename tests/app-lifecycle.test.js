@@ -9,6 +9,23 @@ import { OX_QUESTION_COUNT } from '../src/ox-model.js';
 
 const source = readFileSync(new URL('../src/event-app.js', import.meta.url), 'utf8');
 
+test('saving the existing manager name preserves connected devices', async () => {
+  const data = readFileSync(new URL('../src/event-data.js', import.meta.url), 'utf8');
+  const updates = [];
+  const context = vm.createContext({
+    nameKey: value => value,
+    read: async () => ({ 진행자: { name: '진행자' } }),
+    locationRef: room => room,
+    update: async (...args) => updates.push(args),
+  });
+  vm.runInContext(data.slice(data.indexOf('export async function saveManagerName('), data.indexOf('export async function claimManager(')).replace('export ', ''), context);
+  await context.saveManagerName('room', '진행자');
+  assert.deepEqual(updates, []);
+  await context.saveManagerName('room', '새진행자');
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0][1].managerDevices, null);
+});
+
 test('desktop Chrome device emulation allows windowed controllers while mobile browsers retain fullscreen', () => {
   const context = vm.createContext({
     navigator: { userAgent: 'Mozilla/5.0 Chrome/142.0.0.0', platform: 'Win32' },

@@ -1,17 +1,19 @@
 import { test, expect } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { get, ref } from 'firebase/database';
+import { get, ref, set } from 'firebase/database';
 import { MEMORY_LAYOUTS } from '../../src/memory-model.js';
+import { ROOT, SINGLE_EVENT_ROOM, nameKey } from '../../src/event-model.js';
 
 test('26 independent sessions complete the full event with simultaneous votes, reconnects and exact cumulative scores', async ({ browser }) => {
   test.setTimeout(900000);
   const teams = ['A', 'B', 'C', 'D'];
   const ids = teams.flatMap(team => Array.from({ length: 6 }, (_, index) => `${team}${index + 1}`));
-  const contexts = [], errors = [], checkpoints = [];
+  const contexts = [], errors = [], checkpoints = [], traffic = [];
   const totals = Object.fromEntries(teams.map(team => [team, 0]));
   const players = {};
   const startedAt = Date.now();
+  const fixedEvent = process.env.VITE_FIXED_EVENT_ROOM === SINGLE_EVENT_ROOM;
   const environment = await initializeTestEnvironment({
     projectId: `${process.env.MARTINI_TEST_PROJECT ?? 'demo-martini-mt'}-default-rtdb`,
     database: { host: '127.0.0.1', port: 9000, rules: await readFile('database.rules.json', 'utf8') },
@@ -23,8 +25,34 @@ test('26 independent sessions complete the full event with simultaneous votes, r
       isMobile: mobile, hasTouch: mobile,
     });
     contexts.push(context);
-    await context.addInitScript(() => Object.defineProperty(document, 'fullscreenEnabled', { get: () => false }));
+    await context.addInitScript(() => {
+      Object.defineProperty(document, 'fullscreenEnabled', { get: () => false });
+      window.auditMetrics = { qrCanvases: 0, longTasks: 0, longTaskMs: 0, longestTaskMs: 0 };
+      const seenCanvases = new WeakSet();
+      const getContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (...args) {
+        if (this.classList.contains('invite-qr') && !seenCanvases.has(this)) {
+          seenCanvases.add(this);
+          window.auditMetrics.qrCanvases++;
+        }
+        return getContext.apply(this, args);
+      };
+      new PerformanceObserver(list => {
+        for (const entry of list.getEntries()) {
+          window.auditMetrics.longTasks++;
+          window.auditMetrics.longTaskMs += entry.duration;
+          window.auditMetrics.longestTaskMs = Math.max(window.auditMetrics.longestTaskMs, entry.duration);
+        }
+      }).observe({ type: 'longtask', buffered: true });
+    });
     const page = await context.newPage();
+    const connection = { session: contexts.length, sentBytes: 0, receivedBytes: 0 };
+    traffic.push(connection);
+    page.on('websocket', socket => {
+      if (new URL(socket.url()).port !== '9000') return;
+      socket.on('framesent', frame => { connection.sentBytes += Buffer.byteLength(frame.payload); });
+      socket.on('framereceived', frame => { connection.receivedBytes += Buffer.byteLength(frame.payload); });
+    });
     page.setDefaultTimeout(20000);
     page.on('pageerror', error => errors.push(error.message));
     return page;
@@ -43,7 +71,11 @@ test('26 independent sessions complete the full event with simultaneous votes, r
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', stage, { timeout: 20000 });
     await Promise.all([host, remote, ...Object.values(players)].map(page => expect(page.getByRole('alert')).toHaveCount(0)));
     expect(errors).toEqual([]);
-    checkpoints.push({ stage, seconds: Math.round((Date.now() - startedAt) / 1000) });
+    checkpoints.push({
+      stage, seconds: Math.round((Date.now() - startedAt) / 1000),
+      host: await host.evaluate(() => window.auditMetrics),
+      remote: await remote.evaluate(() => window.auditMetrics),
+    });
     console.log(`[26 sessions] ${stage}`);
   }
   async function score(stage, points) {
@@ -64,8 +96,17 @@ test('26 independent sessions complete the full event with simultaneous votes, r
     }
   }
   try {
+    if (fixedEvent) await environment.withSecurityRulesDisabled(context => set(ref(context.database(), `${ROOT}/${SINGLE_EVENT_ROOM}`), {
+      meta: { ownerUid: 'original-desktop', title: '마티니 MT', createdAt: 1 },
+      stage: { step: 'setup', updatedAt: 1 },
+      managerLookup: { [nameKey('전체검증진행자')]: { name: '전체검증진행자' } },
+    }));
     await test.step('Register 24 participants and connect all 26 sessions', async () => {
       await host.goto('/', { waitUntil: 'domcontentloaded' });
+      if (fixedEvent) {
+        await host.locator('#real-name').fill('전체검증진행자');
+        await host.getByRole('button', { name: '입장', exact: true }).click();
+      }
       await expect(host.locator('#manager-name')).toBeEnabled();
       await host.locator('#manager-name').fill('전체검증진행자');
       for (const id of ids) await host.locator(`#name-${id}`).fill(`${id}검증참가자`);
@@ -90,7 +131,8 @@ test('26 independent sessions complete the full event with simultaneous votes, r
       }));
       await expect(host.locator('.arrival-heading strong')).toHaveText('24', { timeout: 30000 });
       expect(Object.keys(await read('bindings'))).toHaveLength(24);
-      expect(await read('managerBinding')).toBeTruthy();
+      if (fixedEvent) expect(Object.keys(await read('managerDevices'))).toHaveLength(2);
+      else expect(await read('managerBinding')).toBeTruthy();
       checkpoints.push({ stage: '26 sessions connected', milliseconds: Date.now() - joinStartedAt });
       await checkpoint('join');
       await host.screenshot({ path: '.cache/audit-26-connected.png' });
@@ -298,6 +340,28 @@ test('26 independent sessions complete the full event with simultaneous votes, r
       expect((await read('teamScores')).totals).toEqual(totals);
     });
 
+    await test.step('Yut board, one-time winning score and all four awards with 26 sessions', async () => {
+      await next();
+      await checkpoint('yut-intro');
+      await next();
+      await checkpoint('yut-board');
+      await expect(host.locator('[data-yut-piece]')).toHaveCount(16);
+      await host.locator('[data-yut-piece="A1"]').click();
+      await host.locator('.yut-node.is-center').click();
+      await expect.poll(async () => (await read('yutGame')).pieces.A1).toMatchObject({ x: 500, y: 340 });
+      await remote.getByRole('button', { name: '1조 우승 +300', exact: true }).click();
+      await score('final-ranking', { A: 300 });
+      const scores = await read('teamScores');
+      expect(Object.keys(scores.awards)).toHaveLength(15);
+      const order = [...teams].sort((a, b) => totals[b] - totals[a] || a.localeCompare(b));
+      for (const [index, team] of order.entries()) {
+        await expect(host.locator('.final-award')).toHaveAttribute('data-award-index', String(index), { timeout: 15000 });
+        await expect(host.locator('.final-award')).toHaveAttribute('data-award-team', team);
+      }
+      expect((await read('teamScores')).totals).toEqual(totals);
+      await host.screenshot({ path: '.cache/audit-26-final-award.png' });
+    });
+
     await test.step('Reset all games with all 26 sessions still connected', async () => {
       await remote.getByRole('button', { name: '설정', exact: true }).click();
       await expect(host.locator('.dashboard')).toBeVisible();
@@ -306,7 +370,7 @@ test('26 independent sessions complete the full event with simultaneous votes, r
       await host.getByRole('button', { name: '발표 시작', exact: true }).click();
       await checkpoint('join');
       await expect(host.locator('.arrival-heading strong')).toHaveText('24');
-      for (const path of ['tasteGame', 'sojuGame', 'militaryGame', 'oxGame', 'zoomGame', 'liarGame', 'stopwatchGame', 'numberGame', 'memoryGame', 'reactionGame', 'teamScores']) expect(await read(path)).toBeNull();
+      for (const path of ['tasteGame', 'sojuGame', 'militaryGame', 'oxGame', 'zoomGame', 'liarGame', 'stopwatchGame', 'numberGame', 'memoryGame', 'reactionGame', 'yutGame', 'teamScores']) expect(await read(path)).toBeNull();
       expect(Object.keys(await read('bindings'))).toHaveLength(24);
       await next();
       await Promise.all(Object.values(players).map(page => expect(page.locator('#tap-target')).toBeEnabled()));
@@ -314,8 +378,8 @@ test('26 independent sessions complete the full event with simultaneous votes, r
       await expect(host.locator('#winner-name')).toHaveText('A1검증참가자');
     });
     expect(errors).toEqual([]);
-    await writeFile('.cache/audit-26-summary.json', JSON.stringify({ sessions: contexts.length, totals, checkpoints, errors }, null, 2));
   } finally {
+    await writeFile('.cache/audit-26-summary.json', JSON.stringify({ fixedEvent, sessions: contexts.length, totals, checkpoints, traffic, errors }, null, 2));
     await Promise.all(contexts.map(context => context.close()));
     await environment.cleanup();
   }

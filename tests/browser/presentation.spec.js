@@ -25,7 +25,7 @@ test('the desktop setup shortcut exits restored yut fullscreen and preserves pro
     await expect(page.locator('.presentation')).toHaveAttribute('data-slide', 'yut-board');
     await page.getByRole('button', { name: '전체화면', exact: true }).click();
     await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
-    await expect(page.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('.presentation')).toHaveAttribute('aria-busy', 'true');
     await page.keyboard.press('Control+Shift+Home');
     await expect(page.locator('.dashboard')).toBeVisible();
     await expect(page.locator('#name-A1')).toHaveValue('설정복귀참가자');
@@ -261,7 +261,9 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
       await expect(page.locator('.controller-identity')).toHaveText(`1조 · ${name}`);
       await expect(page.locator('header, footer, #message-input')).toHaveCount(0);
     }
+    await host.locator('.invite-qr').evaluate(canvas => { window.initialInviteQr = canvas; });
     await join(alice, '김지민'); await join(bob, '이서연');
+    expect(await host.locator('.invite-qr').evaluate(canvas => canvas === window.initialInviteQr)).toBe(true);
     await alice.evaluate(() => document.exitFullscreen());
     await expect(alice.getByRole('button', { name: '전체화면으로 시작' })).toBeVisible();
     await alice.getByRole('button', { name: '전체화면으로 시작' }).click();

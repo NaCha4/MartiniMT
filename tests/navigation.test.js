@@ -83,6 +83,23 @@ test('the desktop setup shortcut exits from every presentation screen', async ()
   }
 });
 
+test('returning to setup bypasses the fullscreen debounce but waits for an active operation', async () => {
+  const calls = [];
+  const state = { role: 'host', room: 'test-room', presenting: true, controlsLocked: true, online: true, presentation: { resetAt: 123 } };
+  const context = vm.createContext({
+    state, document: { hidden: false }, schedule() {}, lockControls() {},
+    api: { async setPresentation(...args) { calls.push(args); } },
+    showError(error) { throw error; },
+  });
+  vm.runInContext(source.slice(source.indexOf('async function action('), source.indexOf('async function memoryAction(')), context);
+  await context.action('exit');
+  assert.deepEqual(calls, [['test-room', false, 123]]);
+  assert.equal(state.presenting, false);
+  state.busy = true;
+  await context.action('exit');
+  assert.equal(calls.length, 1);
+});
+
 test('the setup shortcut requires the exact combination and a presenting host', async () => {
   for (const modifiers of [
     {}, { ctrlKey: true }, { shiftKey: true },
