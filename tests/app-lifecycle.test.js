@@ -9,6 +9,18 @@ import { OX_QUESTION_COUNT } from '../src/ox-model.js';
 
 const source = readFileSync(new URL('../src/event-app.js', import.meta.url), 'utf8');
 
+test('render keeps the focused game picker intact and resumes after focus leaves', () => {
+  const start = source.indexOf('function render() {');
+  const end = source.indexOf('  const previousPhoto', start);
+  const context = vm.createContext({ document: { activeElement: { id: 'debug-game-jump' } }, renders: 0 });
+  vm.runInContext(source.slice(start, end) + 'renders++; }', context);
+  context.render();
+  assert.equal(context.renders, 0);
+  context.document.activeElement = null;
+  context.render();
+  assert.equal(context.renders, 1);
+});
+
 test('desktop Chrome device emulation allows windowed controllers while mobile browsers retain fullscreen', () => {
   const context = vm.createContext({
     navigator: { userAgent: 'Mozilla/5.0 Chrome/142.0.0.0', platform: 'Win32' },

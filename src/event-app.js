@@ -574,6 +574,8 @@ function participantView() {
 }
 
 function render() {
+  // Replacing a focused native select closes its open option list.
+  if (document.activeElement?.id === 'debug-game-jump') return;
   const previousPhoto = $('.zoom-photo');
   const previousQuestion = previousPhoto?.closest('[data-question]')?.dataset.question;
   const focused = document.activeElement, focusId = focused?.id;
@@ -1062,9 +1064,20 @@ async function stopwatchAction(name) {
 
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
-  $('#debug-game-jump')?.addEventListener('change', async event => {
-    const index = Number(event.target.value);
-    if (event.target.value === '' || !Number.isInteger(index) || !STAGES[index]
+  const gameJump = $('#debug-game-jump');
+  gameJump?.addEventListener('blur', schedule);
+  gameJump?.addEventListener('keydown', event => {
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      gameJump.blur();
+    }
+  });
+  gameJump?.addEventListener('change', async event => {
+    const value = event.target.value;
+    const index = Number(value);
+    gameJump.blur();
+    if (value === '' || !Number.isInteger(index) || !STAGES[index]
       || state.role !== 'host' || !state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden) return;
     lockControls();
     state.busy = true;
