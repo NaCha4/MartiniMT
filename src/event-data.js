@@ -529,9 +529,12 @@ export async function prepareMemoryGame(room, roster, resetAt = null) {
   const excluded = Object.fromEntries([...memoryExcludedIds(liar, stopwatch, numbers)].map(id => [id, true]));
   const roundId = push(locationRef(room, 'memoryGame')).key;
   const result = await transactLoaded(locationRef(room, 'memoryGame'), current => {
-    if (current) return;
+    if (current) {
+      if (current.control.phase === 'selecting' && !current.control.layoutVersion) return { ...current, control: { ...current.control, layoutVersion: 2, updatedAt: serverTimestamp() } };
+      return;
+    }
     if (!Object.keys(roster).some(id => !excluded[id])) throw { userMessage: '이전 게임에 출전하지 않은 참가자가 필요합니다.' };
-    return { control: { roundId, phase: 'selecting', resetAt, updatedAt: serverTimestamp() }, roster, excluded };
+    return { control: { roundId, phase: 'selecting', layoutVersion: 2, resetAt, updatedAt: serverTimestamp() }, roster, excluded };
   });
   const game = result.snapshot.val();
   if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };

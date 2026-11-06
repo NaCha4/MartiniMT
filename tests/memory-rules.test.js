@@ -25,7 +25,7 @@ beforeEach(async () => {
     numberGame: { contestants: { A: { participantId: 'A3' } } },
   }));
   await set(at('host', 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'memory-select'), updatedAt: serverTimestamp() });
-  await set(at('host', 'memoryGame'), { control: { roundId, phase: 'selecting', updatedAt: serverTimestamp() }, roster: roster.participants });
+  await set(at('host', 'memoryGame'), { control: { roundId, phase: 'selecting', layoutVersion: 2, updatedAt: serverTimestamp() }, roster: roster.participants });
 });
 const enter = id => set(at(id, `memoryGame/contestants/${id[0]}`), { participantId: id, ...roster.participants[id], roundId, selectedAt: serverTimestamp() });
 const flip = (id, sequence, extra = {}) => set(at(id, `memoryGame/events/${id[0]}/${sequence}`), { sequence, cardIndex: 0, roundIndex: 0, roundId, at: serverTimestamp(), ...extra });
@@ -53,6 +53,8 @@ test('memory accepts only sequential append-only flips from its current entrant'
   await assertFails(flip('A4', 0, { at: 1 }));
   await assertFails(flip('A4', 0, { roundId: 'x'.repeat(20) }));
   await assertFails(flip('A4', 0, { cardIndex: 12 }));
+  await assertFails(flip('A4', 0, { roundIndex: 1, cardIndex: 14 }));
+  await assertFails(flip('A4', 0, { roundIndex: 2, cardIndex: 16 }));
   await assertSucceeds(flip('A4', 0));
   await assertSucceeds(flip('A4', 1, { cardIndex: 11 }));
   await assertFails(flip('A4', 0));

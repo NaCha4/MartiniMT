@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { MEMORY_LAYOUTS } from '../../src/memory-model.js';
 
-test('four players replay flip logs, progress through 12/16/20 cards and score in finish order', async ({ browser }) => {
+test('four players replay flip logs, progress through 12/14/16 cards and score in finish order', async ({ browser }) => {
   test.setTimeout(180000);
   const contexts = [], errors = [];
   async function pageFor(mobile = false) {
@@ -44,6 +44,9 @@ test('four players replay flip logs, progress through 12/16/20 cards and score i
     await next();
     await remote.getByRole('button', { name: '게임 시작', exact: true }).click();
     await expect(host.locator('.memory-lane')).toHaveCount(4);
+    expect(await host.locator('.memory-arena').evaluate(element => element.getBoundingClientRect().width / innerWidth)).toBeGreaterThan(.95);
+    expect(await host.locator('.memory-arena').evaluate(element => element.getBoundingClientRect().height / innerHeight)).toBeGreaterThan(.88);
+    await expect(host.locator('.memory-screen .liar-heading')).toHaveCount(0);
     for (const player of players) await expect(player.locator('[data-memory-card]')).toHaveCount(12);
     await expect(players[0].locator('[data-memory-card="0"]')).toBeDisabled();
     for (const [roundIndex, layout] of MEMORY_LAYOUTS.entries()) {
@@ -72,7 +75,7 @@ test('four players replay flip logs, progress through 12/16/20 cards and score i
         }
       }
       if (roundIndex === 1) {
-        await expect(players[0].locator('[data-memory-card]')).toHaveCount(20);
+        await expect(players[0].locator('[data-memory-card]')).toHaveCount(16);
         await host.screenshot({ path: '.cache/memory-live.png' });
         await players[0].screenshot({ path: '.cache/memory-phone.png' });
         expect(await players[0].evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
@@ -88,7 +91,7 @@ test('four players replay flip logs, progress through 12/16/20 cards and score i
     expect(result.scores.totals).toEqual({ A: 200, B: 100, C: 50, D: 0 });
     expect(Object.keys(result.scores.awards)).toHaveLength(1);
     for (const team of ['A', 'B', 'C', 'D']) {
-      expect(Object.values(result.game.events[team])).toHaveLength(48);
+      expect(Object.values(result.game.events[team])).toHaveLength(42);
       expect(Object.keys(result.game.events[team][0]).sort()).toEqual(['at', 'cardIndex', 'roundId', 'roundIndex', 'sequence']);
     }
     await host.getByRole('button', { name: '초기화', exact: true }).click();

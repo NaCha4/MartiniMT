@@ -1181,6 +1181,9 @@
               "updatedAt": {
                 ".validate": "newData.isNumber() && (newData.val() === data.val() || newData.val() === now)"
               },
+              "layoutVersion": {
+                ".validate": "newData.val() === 2"
+              },
               "startedAt": {
                 ".validate": "newData.isNumber() && (newData.val() === data.val() || newData.val() === now)"
               },
@@ -1262,7 +1265,7 @@
                     ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 3 && newData.val() % 1 === 0"
                   },
                   "cardIndex": {
-                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 12 + 4 * newData.parent().child('roundIndex').val() && newData.val() % 1 === 0"
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 12 + (root.child('mtChatV1/sessions').child($session).child('memoryGame').child('control/layoutVersion').val() === 2 ? 2 : 4) * newData.parent().child('roundIndex').val() && newData.val() % 1 === 0"
                   },
                   "$other": {
                     ".validate": false
@@ -1292,7 +1295,7 @@
                     ".validate": "newData.isNumber() && newData.val() <= now"
                   },
                   "moves": {
-                    ".validate": "newData.isNumber() && newData.val() >= 24 && newData.val() <= 1000 && newData.val() % 1 === 0"
+                    ".validate": "newData.isNumber() && newData.val() >= (root.child('mtChatV1/sessions').child($session).child('memoryGame').child('control/layoutVersion').val() === 2 ? 21 : 24) && newData.val() <= 1000 && newData.val() % 1 === 0"
                   },
                   "$other": {
                     ".validate": false

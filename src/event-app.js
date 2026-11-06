@@ -16,7 +16,7 @@ import { createStopwatchClock, formatStopwatchTime, stopwatchRevealFinished, sto
 import { stopwatchControls, stopwatchPresentation, stopwatchParticipant } from './stopwatch-view.js';
 import { NUMBER_VALUES, NUMBER_REVEAL_DURATION, numberRevealFinished } from './number-model.js';
 import { numberControls, numberPresentation, numberParticipant, numberResultCaption } from './number-view.js';
-import { MEMORY_PREVIEW_MS, memoryPlayer, memoryCanFlip, memoryStandings, memoryFinished } from './memory-model.js';
+import { MEMORY_PREVIEW_MS, memoryPlayer, memoryCanFlip, memoryStandings, memoryFinished, memoryLayouts } from './memory-model.js';
 import { memoryControls, memoryPresentation, memoryParticipant } from './memory-view.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
@@ -1063,7 +1063,7 @@ async function memoryAction(name, cardIndex) {
   if (name === 'memory-cancel') { state.memoryConfirm = false; schedule(); return; }
   if (name === 'memory-volunteer') { state.memoryConfirm = true; schedule(); return; }
   const now = Date.now() + state.serverOffset;
-  const player = memoryPlayer(game.events?.[state.participant.team], game.control?.startedAt, now);
+  const player = memoryPlayer(game.events?.[state.participant.team], game.control?.startedAt, now, memoryLayouts(game));
   if (name === 'memory-flip' && (slide.view !== 'play' || game.control?.phase !== 'running'
     || game.contestants?.[state.participant.team]?.participantId !== state.participantId || !memoryCanFlip(player, cardIndex, now))) return;
   state.voting = true; state.error = ''; schedule();
