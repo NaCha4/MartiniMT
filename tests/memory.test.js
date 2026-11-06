@@ -79,13 +79,13 @@ test('memory replays logs, removes pairs, advances rounds and ranks the three fa
   assert.equal(final.roundIndex, 2);
   assert.equal(final.moves, 21);
   assert.equal(final.matched.length, 16);
-  assert.deepEqual(memoryOutcome(game, 100000).points, { A: 200, B: 100, C: 50, D: 0 });
+  assert.deepEqual(memoryOutcome(game, 100000).points, { A: 150, B: 100, C: 50, D: 0 });
   assert.equal(memoryOutcome(game, 100000).results.D.rank, 4);
   assert.throws(() => memoryOutcome(game, startedAt));
   const html = memoryPresentation(game, { view: 'play' }, 100000);
   assert.equal((html.match(/class="memory-lane is-finished"/g) ?? []).length, 4);
   assert.match(html, /4위 FINISH/);
-  assert.doesNotMatch(html, /liar-heading|MEMORY MATCH|1위 200점|기억하세요/);
+  assert.doesNotMatch(html, /liar-heading|MEMORY MATCH|1위 150점|기억하세요/);
   assert.match(memoryParticipant({ game, slide: { view: 'play' }, participant: { team: 'B' }, participantId: 'B4', ready: true, now: 100000 }), /2위 완주/);
 });
 

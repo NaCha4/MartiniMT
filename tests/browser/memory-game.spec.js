@@ -101,8 +101,8 @@ test('four players replay flip logs, progress through 12/14/16 cards and score i
     await next();
     await remote.getByRole('button', { name: '게임 시작', exact: true }).click();
     await expect(host.locator('.memory-lane')).toHaveCount(4);
-    expect(await host.locator('.memory-arena').evaluate(element => element.getBoundingClientRect().width / innerWidth)).toBeGreaterThan(.95);
-    expect(await host.locator('.memory-arena').evaluate(element => element.getBoundingClientRect().height / innerHeight)).toBeGreaterThan(.88);
+    await expect.poll(() => host.locator('.memory-arena').evaluate(element => element.getBoundingClientRect().width / innerWidth)).toBeGreaterThan(.95);
+    await expect.poll(() => host.locator('.memory-arena').evaluate(element => element.getBoundingClientRect().height / innerHeight)).toBeGreaterThan(.88);
     await expect(host.locator('.memory-screen .liar-heading')).toHaveCount(0);
     for (const player of players) await expect(player.locator('[data-memory-card]')).toHaveCount(12);
     await expect(players[0].locator('[data-memory-card="0"]')).toBeDisabled();
@@ -145,7 +145,7 @@ test('four players replay flip logs, progress through 12/14/16 cards and score i
       await api.awardMemoryPoints(room);
       return { scores: await api.read(room, 'teamScores'), game: await api.read(room, 'memoryGame') };
     });
-    expect(result.scores.totals).toEqual({ A: 200, B: 100, C: 50, D: 0 });
+    expect(result.scores.totals).toEqual({ A: 150, B: 100, C: 50, D: 0 });
     expect(Object.keys(result.scores.awards)).toHaveLength(1);
     for (const team of ['A', 'B', 'C', 'D']) {
       expect(Object.values(result.game.events[team])).toHaveLength(42);

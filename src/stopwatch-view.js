@@ -7,17 +7,17 @@ export function stopwatchControls(game, slide, disabled) {
   let control = '';
   if (slide.view === 'play' && game.control?.phase === 'selecting') control = `<button class="button dark" data-action="stopwatch-start" ${disabled || !entries.length ? 'disabled' : ''}>게임 시작</button>`;
   if (slide.view === 'play' && game.control?.phase === 'running') control = `<button class="button dark" data-action="stopwatch-reveal" ${disabled || !stopwatchSubmitted(game) ? 'disabled' : ''}>결과 공개</button>`;
-  const status = slide.view === 'select' ? `${entries.length} / 4개 조 출전 확정 · 1명부터 진행 가능` : slide.view === 'play' ? `${submitted} / ${entries.length}명 제출 완료` : '팀당 1명 · 라이어게임 출전자 제외 · 10초에 가장 가까운 팀 +200점';
+  const status = slide.view === 'select' ? `${entries.length} / 4개 조 출전 확정 · 1명부터 진행 가능` : slide.view === 'play' ? `${submitted} / ${entries.length}명 제출 완료` : '팀당 1명 · 라이어게임 출전자 제외 · 10초에 가장 가까운 팀 +100점';
   return `<section class="remote-game-controls">${control}<p>${status}</p></section>`;
 }
 
 export function stopwatchPresentation(game, slide, now = Date.now()) {
-  if (slide.view === 'intro') return `<section class="taste-screen liar-intro"><span class="taste-eyebrow">RECREATION 05</span><h1>인간스톱워치</h1><div class="liar-rules"><p>각 조 6명 중 <b>1명 출전</b> · 라이어게임 출전자 제외</p><p>마음속으로 <b>10초</b>를 세고 카운트 종료!</p><p>모두 제출한 뒤 기록을 한 번에 공개합니다.</p><p>10초에 가장 가까운 팀 <b>+200점</b> · 동률 모두 +200점</p></div></section>`;
+  if (slide.view === 'intro') return `<section class="taste-screen liar-intro"><span class="taste-eyebrow">RECREATION 05</span><h1>인간스톱워치</h1><div class="liar-rules"><p>각 조 6명 중 <b>1명 출전</b> · 라이어게임 출전자 제외</p><p>마음속으로 <b>10초</b>를 세고 카운트 종료!</p><p>모두 제출한 뒤 기록을 한 번에 공개합니다.</p><p>10초에 가장 가까운 팀 <b>+100점</b> · 동률 모두 +100점</p></div></section>`;
   const result = slide.view === 'play' ? game.result : null;
   const elapsed = result ? Math.max(0, now - result.revealedAt) : 0;
   const progress = result ? stopwatchRevealProgress(game, now) : 0;
   const revealStyle = `--stopwatch-reveal-delay:-${elapsed}ms;--stopwatch-count-step:${STOPWATCH_COUNTDOWN_DURATION / 3}ms;--stopwatch-record-delay:${STOPWATCH_COUNTDOWN_DURATION - elapsed}ms;--stopwatch-winner-delay:${STOPWATCH_COUNTDOWN_DURATION + STOPWATCH_RECORD_DURATION - elapsed}ms`;
-  const status = slide.view === 'select' ? '휴대폰에서 출전을 신청해주세요 · 1명부터 진행 가능' : result ? '10초에 가장 가까운 팀 +200점 · 동률 모두 +200점' : game.control?.phase === 'running' ? '각자 10초를 세어주세요 · 모든 출전자 제출 후 결과 공개' : '리모컨에서 게임 시작을 눌러주세요';
+  const status = slide.view === 'select' ? '휴대폰에서 출전을 신청해주세요 · 1명부터 진행 가능' : result ? '10초에 가장 가까운 팀 +100점 · 동률 모두 +100점' : game.control?.phase === 'running' ? '각자 10초를 세어주세요 · 모든 출전자 제출 후 결과 공개' : '리모컨에서 게임 시작을 눌러주세요';
   return `<section class="taste-screen liar-screen stopwatch-screen ${result ? `stopwatch-results ${stopwatchRevealFinished(game, now) ? 'is-settled' : 'is-revealing'}` : ''}" style="${revealStyle}"><header class="liar-heading"><span>HUMAN STOPWATCH</span><span>목표 <b>10.00초</b></span></header><h1>${slide.view === 'select' ? '출전자를 기다립니다' : result ? '기록 공개' : '인간스톱워치'}</h1><div class="stopwatch-board"><div class="liar-contestants">${TEAM_IDS.map(team => {
     const person = game.contestants?.[team];
     const winner = result?.points[team] > 0;

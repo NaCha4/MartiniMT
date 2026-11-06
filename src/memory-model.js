@@ -92,7 +92,7 @@ export function memoryOutcome(game, now = Date.now()) {
   const points = emptyScores();
   const results = {};
   memoryStandings(game, now).forEach((player, index) => {
-    points[player.team] = [200, 100, 50, 0][index];
+    points[player.team] = [150, 100, 50, 0][index];
     results[player.team] = { rank: index + 1, finishedAt: player.finishedAt, moves: player.moves };
   });
   return { points, results };

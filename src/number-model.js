@@ -24,7 +24,7 @@ export function numberOutcome(game, round) {
   const counts = Object.values(values).reduce((result, value) => ({ ...result, [value]: (result[value] ?? 0) + 1 }), {});
   const highest = Math.max(0, ...Object.values(values).filter(value => counts[value] === 1));
   const points = emptyScores();
-  for (const team of TEAM_IDS) if (values[team] === highest) points[team] = highest * 20;
+  for (const team of TEAM_IDS) if (values[team] === highest) points[team] = highest * 10;
   return { values, points };
 }
 

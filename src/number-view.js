@@ -9,18 +9,18 @@ export function numberControls(game, slide, disabled) {
   if (slide.view === 'play' && phase === 'selecting') control = `<button class="button dark" data-action="number-start" ${disabled || !count ? 'disabled' : ''}>게임 시작</button>`;
   if (slide.view === 'play' && phase === 'ready') control = `<button class="button dark" data-action="number-open" ${disabled ? 'disabled' : ''}>입력 시작</button>`;
   if (slide.view === 'play' && phase === 'open') control = `<button class="button dark" data-action="number-reveal" ${disabled || !numberSubmitted(game, round) ? 'disabled' : ''}>결과 공개</button>`;
-  const status = slide.view === 'select' ? `${count} / 4개 조 출전 확정 · 같은 출전자로 3라운드 진행` : slide.view === 'play' ? `${Object.keys(round?.submissions ?? {}).length} / ${count}명 제출 완료 · ${slide.questionIndex + 1} / 3라운드` : '중복 숫자 탈락 · 가장 높은 단독 숫자 × 20점';
+  const status = slide.view === 'select' ? `${count} / 4개 조 출전 확정 · 같은 출전자로 3라운드 진행` : slide.view === 'play' ? `${Object.keys(round?.submissions ?? {}).length} / ${count}명 제출 완료 · ${slide.questionIndex + 1} / 3라운드` : '중복 숫자 탈락 · 가장 높은 단독 숫자 × 10점';
   return `<section class="remote-game-controls">${control}<p>${status}</p></section>`;
 }
 
 export function numberResultCaption(game, questionIndex) {
   const result = game.rounds?.[questionIndex]?.result;
   const winner = TEAM_IDS.find(team => result?.points[team] > 0);
-  return `<header class="liar-result"><h1>${questionIndex === NUMBER_ROUNDS - 1 ? '눈치 게임 최종 점수' : `눈치 게임 ${questionIndex + 1}라운드 점수`}</h1><p>${winner ? `${TEAM_NAMES[winner]} · ${result.values[winner]} × 20 = +${result.points[winner]}점` : '모든 숫자가 중복되어 이번 라운드는 무득점'}${questionIndex === NUMBER_ROUNDS - 1 ? ' · 3라운드 완료' : ''}</p></header>`;
+  return `<header class="liar-result"><h1>${questionIndex === NUMBER_ROUNDS - 1 ? '눈치 게임 최종 점수' : `눈치 게임 ${questionIndex + 1}라운드 점수`}</h1><p>${winner ? `${TEAM_NAMES[winner]} · ${result.values[winner]} × 10 = +${result.points[winner]}점` : '모든 숫자가 중복되어 이번 라운드는 무득점'}${questionIndex === NUMBER_ROUNDS - 1 ? ' · 3라운드 완료' : ''}</p></header>`;
 }
 
 export function numberPresentation(game, slide, now = Date.now()) {
-  if (slide.view === 'intro') return `<section class="taste-screen number-intro"><span class="taste-eyebrow">RECREATION 06</span><h1>눈치보고<br/><em>숫자 고르기</em></h1><div class="number-intro-values" aria-hidden="true">${[7, 10, 10, 9].map(value => `<b class="${value === 10 ? 'is-duplicate' : value === 9 ? 'is-winner' : ''}">${value}</b>`).join('')}</div><div class="liar-rules"><p>각 조 <b>1명 출전</b> · 라이어·스톱워치 출전자 제외</p><p>1~10 중 하나 선택 · <b>중복 숫자는 탈락</b></p><p>남은 숫자 중 가장 높은 숫자 <b>× 20점</b></p><p>같은 출전자로 <b>3라운드</b> · 탈락해도 다음 라운드 재도전</p></div></section>`;
+  if (slide.view === 'intro') return `<section class="taste-screen number-intro"><span class="taste-eyebrow">RECREATION 06</span><h1>눈치보고<br/><em>숫자 고르기</em></h1><div class="number-intro-values" aria-hidden="true">${[7, 10, 10, 9].map(value => `<b class="${value === 10 ? 'is-duplicate' : value === 9 ? 'is-winner' : ''}">${value}</b>`).join('')}</div><div class="liar-rules"><p>각 조 <b>1명 출전</b> · 라이어·스톱워치 출전자 제외</p><p>1~10 중 하나 선택 · <b>중복 숫자는 탈락</b></p><p>남은 숫자 중 가장 높은 숫자 <b>× 10점</b></p><p>같은 출전자로 <b>3라운드</b> · 탈락해도 다음 라운드 재도전</p></div></section>`;
   const round = game.rounds?.[slide.questionIndex];
   const result = slide.view === 'play' ? round?.result : null;
   const finished = numberRevealFinished(round, now);
@@ -30,7 +30,7 @@ export function numberPresentation(game, slide, now = Date.now()) {
   const winner = result && TEAM_IDS.find(team => result.points[team] > 0);
   return `<section class="taste-screen number-screen ${result ? `has-result ${finished ? 'is-settled' : 'is-revealing'}` : ''}" style="--number-elapsed:-${elapsed}ms"><header class="liar-heading"><span>READ THE ROOM</span><span>${slide.view === 'select' ? 'PLAYER SELECT' : `ROUND ${String(slide.questionIndex + 1).padStart(2, '0')} / 03`}</span></header><h1>${slide.view === 'select' ? '이번엔 누가 읽어낼까요?' : result ? '숫자를 공개합니다' : '크게 걸까, 안전하게 갈까?'}</h1><div class="number-track" aria-hidden="true">${NUMBER_VALUES.map(value => {
     const count = result ? Object.values(result.values).filter(number => number === value).length : 0;
-    return `<div class="number-tile ${count > 1 ? 'is-duplicate' : winner && result.values[winner] === value ? 'is-winner' : count === 1 ? 'is-safe' : ''}" style="--number-delay:${1500 + value * 150 - elapsed}ms"><b>${value}</b><small>${result ? count > 1 ? `${count}명 중복` : count === 1 ? '단독 선택' : '선택 없음' : `${value * 20}점`}</small></div>`;
+    return `<div class="number-tile ${count > 1 ? 'is-duplicate' : winner && result.values[winner] === value ? 'is-winner' : count === 1 ? 'is-safe' : ''}" style="--number-delay:${1500 + value * 150 - elapsed}ms"><b>${value}</b><small>${result ? count > 1 ? `${count}명 중복` : count === 1 ? '단독 선택' : '선택 없음' : `${value * 10}점`}</small></div>`;
   }).join('')}</div><div class="number-contestants">${TEAM_IDS.map(team => {
     const person = game.contestants?.[team];
     const value = result?.values[team];
@@ -49,7 +49,7 @@ export function numberParticipant({ game, slide, participant, participantId, rea
     return shell(`<button class="liar-enter" data-number-action="number-volunteer" ${disabled ? 'disabled' : ''}><strong>출전하기</strong><span>라이어·스톱워치 미출전자만 참여</span></button>`);
   }
   if (slide.view === 'play' && ownEntry && game.control?.questionIndex === slide.questionIndex && game.control.phase === 'open' && !round?.submitted && !round?.result) {
-    return shell(`<section class="number-picker"><header><h1>나만의 숫자를 고르세요</h1><p>${slide.questionIndex + 1} / 3라운드 · 중복이면 탈락 · 최고 단독 숫자 × 20점</p></header><div class="number-options" role="group" aria-label="1부터 10까지 숫자 선택">${NUMBER_VALUES.map(value => `<button data-number-choice="${value}" aria-pressed="${choice === value}" ${disabled ? 'disabled' : ''}>${value}<small>${value * 20}점</small></button>`).join('')}</div><button class="button dark number-submit" data-number-action="number-submit" ${disabled || !NUMBER_VALUES.includes(choice) ? 'disabled' : ''}>${choice ? `${choice} 선택 확정` : '숫자를 선택해주세요'}</button><p>확정 후에는 바꿀 수 없습니다</p></section>`);
+    return shell(`<section class="number-picker"><header><h1>나만의 숫자를 고르세요</h1><p>${slide.questionIndex + 1} / 3라운드 · 중복이면 탈락 · 최고 단독 숫자 × 10점</p></header><div class="number-options" role="group" aria-label="1부터 10까지 숫자 선택">${NUMBER_VALUES.map(value => `<button data-number-choice="${value}" aria-pressed="${choice === value}" ${disabled ? 'disabled' : ''}>${value}<small>${value * 10}점</small></button>`).join('')}</div><button class="button dark number-submit" data-number-action="number-submit" ${disabled || !NUMBER_VALUES.includes(choice) ? 'disabled' : ''}>${choice ? `${choice} 선택 확정` : '숫자를 선택해주세요'}</button><p>확정 후에는 바꿀 수 없습니다</p></section>`);
   }
   if (round?.result && ownEntry && slide.view !== 'select') {
     if (!numberRevealFinished(round, now)) return shell('<h1>두근두근, 숫자 공개 중</h1><p>발표 화면을 확인해주세요</p>');

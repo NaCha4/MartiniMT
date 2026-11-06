@@ -5,7 +5,7 @@ export function memoryControls(game, slide, disabled) {
   const count = Object.keys(game.contestants ?? {}).length;
   const control = slide.view === 'play' && game.control?.phase === 'selecting'
     ? `<button class="button dark" data-action="memory-start" ${disabled || !count ? 'disabled' : ''}>게임 시작</button>` : '';
-  return `<section class="remote-game-controls">${control}<p>${slide.view === 'select' ? `${count} / 4개 조 출전 확정` : '12장 → 14장 → 16장 · 먼저 완주한 순서대로 200 / 100 / 50점'}</p></section>`;
+  return `<section class="remote-game-controls">${control}<p>${slide.view === 'select' ? `${count} / 4개 조 출전 확정` : '12장 → 14장 → 16장 · 먼저 완주한 순서대로 150 / 100 / 50점'}</p></section>`;
 }
 
 function memoryBoard(player, { playing = false, disabled = true, now }) {
@@ -35,7 +35,7 @@ function playerStatus(player, now) {
 }
 
 export function memoryPresentation(game, slide, now = Date.now()) {
-  if (slide.view === 'intro') return `<section class="taste-screen memory-intro"><span class="taste-eyebrow">RECREATION 07</span><h1>기억의 한 수<br/><em>카드 뒤집기</em></h1><div class="memory-intro-cards" aria-hidden="true"><span>🍋</span><span>?</span><span>🍋</span></div><div class="liar-rules"><p><b>3초</b> 동안 기억하고, 같은 카드 두 장을 찾으세요.</p><p><b>12장 → 14장 → 16장</b> · 모두 맞추면 다음 라운드로!</p><p>모두 같은 고정 배치 · 각 조 1명 · 이전 출전자 제외</p><p>완주 순서대로 <b>200점 · 100점 · 50점</b></p></div></section>`;
+  if (slide.view === 'intro') return `<section class="taste-screen memory-intro"><span class="taste-eyebrow">RECREATION 07</span><h1>기억의 한 수<br/><em>카드 뒤집기</em></h1><div class="memory-intro-cards" aria-hidden="true"><span>🍋</span><span>?</span><span>🍋</span></div><div class="liar-rules"><p><b>3초</b> 동안 기억하고, 같은 카드 두 장을 찾으세요.</p><p><b>12장 → 14장 → 16장</b> · 모두 맞추면 다음 라운드로!</p><p>모두 같은 고정 배치 · 각 조 1명 · 이전 출전자 제외</p><p>완주 순서대로 <b>150점 · 100점 · 50점</b></p></div></section>`;
   if (slide.view === 'select') return `<section class="taste-screen memory-select"><span class="taste-eyebrow">MEMORY MATCH</span><h1>새로운 기억력 고수를 찾습니다</h1><div class="liar-contestants">${TEAM_IDS.map(team => `<article class="liar-contestant" data-team="${team}"><span>${TEAM_NAMES[team]}</span><strong>${escape(game.contestants?.[team]?.name ?? '출전 대기')}</strong></article>`).join('')}</div><p class="liar-status">라이어·인간스톱워치·눈치 게임 출전자는 참여할 수 없습니다</p></section>`;
   const standings = memoryStandings(game, now);
   return `<section class="taste-screen memory-screen"><div class="memory-arena">${TEAM_IDS.map(team => {
@@ -43,7 +43,7 @@ export function memoryPresentation(game, slide, now = Date.now()) {
     const player = standings.find(entry => entry.team === team);
     if (!person) return `<article class="memory-lane is-empty" data-team="${team}"><h2>${TEAM_NAMES[team]}</h2><p>미출전</p></article>`;
     const rank = player.finishedAt !== null ? standings.indexOf(player) + 1 : null;
-    return `<article class="memory-lane ${rank ? 'is-finished' : ''}" data-team="${team}"><header><h2>${TEAM_NAMES[team]} <strong>${escape(person.name)}</strong></h2><b>${rank ? `${rank}위` : `${player.roundIndex + 1} / 3`}</b></header>${memoryBoard(player, { now })}<footer>${rank ? `<b>${rank <= 3 ? `+${[200, 100, 50][rank - 1]}점` : '완주!'}</b>` : ''}<span>${now < player.roundStartedAt + MEMORY_PREVIEW_MS ? `${Math.ceil((player.roundStartedAt + MEMORY_PREVIEW_MS - now) / 1000)}초` : `${player.matched.length / 2} / ${player.layout.length / 2}`}</span></footer>${rank ? `<div class="memory-finish-ribbon">${rank}위 FINISH</div>` : ''}</article>`;
+    return `<article class="memory-lane ${rank ? 'is-finished' : ''}" data-team="${team}"><header><h2>${TEAM_NAMES[team]} <strong>${escape(person.name)}</strong></h2><b>${rank ? `${rank}위` : `${player.roundIndex + 1} / 3`}</b></header>${memoryBoard(player, { now })}<footer>${rank ? `<b>${rank <= 3 ? `+${[150, 100, 50][rank - 1]}점` : '완주!'}</b>` : ''}<span>${now < player.roundStartedAt + MEMORY_PREVIEW_MS ? `${Math.ceil((player.roundStartedAt + MEMORY_PREVIEW_MS - now) / 1000)}초` : `${player.matched.length / 2} / ${player.layout.length / 2}`}</span></footer>${rank ? `<div class="memory-finish-ribbon">${rank}위 FINISH</div>` : ''}</article>`;
   }).join('')}</div></section>`;
 }
 
@@ -62,7 +62,7 @@ export function memoryParticipant({ game, slide, participant, participantId, rea
   if (ownEntry && game.control?.startedAt) {
     const standings = memoryStandings(game, now), index = standings.findIndex(player => player.team === participant.team);
     const player = standings[index];
-    if (player?.finishedAt !== null) return shell(`<section class="memory-personal-finish"><span>ALL CLEAR</span><h1>${index + 1}위 완주!</h1><strong>${index < 3 ? `+${[200, 100, 50][index]}점` : '수고하셨습니다'}</strong><p>${playerStatus({ ...player, startedAt: game.control.startedAt }, now)}</p></section>`);
+    if (player?.finishedAt !== null) return shell(`<section class="memory-personal-finish"><span>ALL CLEAR</span><h1>${index + 1}위 완주!</h1><strong>${index < 3 ? `+${[150, 100, 50][index]}점` : '수고하셨습니다'}</strong><p>${playerStatus({ ...player, startedAt: game.control.startedAt }, now)}</p></section>`);
   }
   const message = game.excluded?.[participantId] && slide.view === 'select' ? '이전 게임 출전자는 참여할 수 없습니다' : ownEntry ? '출전 확정 · 게임 시작 대기' : '카드 뒤집기 관전 중';
   return shell(`<h1>${message}</h1>`);

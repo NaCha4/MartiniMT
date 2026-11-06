@@ -25,10 +25,10 @@ test('number game excludes everyone who played any liar round or stopwatch', () 
 
 test('only the highest unique number scores while every duplicate loses', () => {
   for (const [values, points] of [
-    [{ A: 10, B: 10, C: 8, D: 5 }, { A: 0, B: 0, C: 160, D: 0 }],
-    [{ A: 10, B: 9, C: 8, D: 7 }, { A: 200, B: 0, C: 0, D: 0 }],
+    [{ A: 10, B: 10, C: 8, D: 5 }, { A: 0, B: 0, C: 80, D: 0 }],
+    [{ A: 10, B: 9, C: 8, D: 7 }, { A: 100, B: 0, C: 0, D: 0 }],
     [{ A: 10, B: 10, C: 7, D: 7 }, { A: 0, B: 0, C: 0, D: 0 }],
-    [{ A: 1 }, { A: 20, B: 0, C: 0, D: 0 }],
+    [{ A: 1 }, { A: 10, B: 0, C: 0, D: 0 }],
   ]) {
     const { game, round } = fixture(values);
     assert.deepEqual(numberOutcome(game, round), { values, points });
@@ -67,7 +67,7 @@ test('reveal uses saved timestamps, safely renders names, and keeps next-round p
   assert.match(numberPresentation(game, slide, 1100), /is-revealing/);
   assert.match(numberPresentation(game, slide, 6000), /is-settled/);
   assert.match(numberPresentation(game, slide), /A&lt;선수&gt;/);
-  assert.match(numberPresentation(game, slide), /최고 단독 숫자 · \+160점/);
+  assert.match(numberPresentation(game, slide), /최고 단독 숫자 · \+80점/);
   const html = numberParticipant({ game, slide, participant: { team: 'A' }, participantId: 'A3', ready: true, now: 6000 });
   assert.match(html, /이번 라운드 탈락/);
   assert.match(html, /다음 라운드에 다시 도전/);

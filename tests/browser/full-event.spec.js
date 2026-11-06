@@ -214,7 +214,7 @@ test('26 independent sessions complete the full event with simultaneous votes, r
       const submissions = await read('stopwatchGame/submissions');
       for (const value of Object.values(submissions)) expect(value.elapsedMs).toBeGreaterThanOrEqual(10000);
       const distance = Math.min(...Object.values(submissions).map(value => Math.abs(value.elapsedMs - 10000)));
-      const points = Object.fromEntries(teams.map(team => [team, Math.abs(submissions[team].elapsedMs - 10000) === distance ? 200 : 0]));
+      const points = Object.fromEntries(teams.map(team => [team, Math.abs(submissions[team].elapsedMs - 10000) === distance ? 100 : 0]));
       await remote.getByRole('button', { name: '결과 공개', exact: true }).click();
       await next();
       await score('stopwatch-score', points);
@@ -237,7 +237,7 @@ test('26 independent sessions complete the full event with simultaneous votes, r
         }));
         await remote.getByRole('button', { name: '결과 공개', exact: true }).click();
         await next();
-        await score(`number-score-${index + 1}`, { D: 80 });
+        await score(`number-score-${index + 1}`, { D: 40 });
         await next();
       }
     });
@@ -268,7 +268,7 @@ test('26 independent sessions complete the full event with simultaneous votes, r
           } else await Promise.all(teams.map(finish));
         }
       }
-      await score('memory-score', { A: 200, B: 100, C: 50 });
+      await score('memory-score', { A: 150, B: 100, C: 50 });
       await next();
     });
 

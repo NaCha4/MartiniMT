@@ -80,7 +80,7 @@ test('one entrant can locally count, reload, submit, reveal manually and score o
     await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
     await expect(host.locator('.stopwatch-screen')).toHaveClass(/is-settled/);
     await expect(host.locator('.stopwatch-time')).toContainText((Math.round(submission.elapsedMs / 10) / 100).toFixed(2));
-    await expect(host.locator('.stopwatch-award')).toHaveText('+200점');
+    await expect(host.locator('.stopwatch-award')).toHaveText('+100점');
     await expect(player.locator('.stopwatch-personal-result h1')).toContainText((Math.round(submission.elapsedMs / 10) / 100).toFixed(2));
     await next();
     await expect(host.getByRole('heading', { name: '인간스톱워치 점수', exact: true })).toBeVisible();
@@ -93,7 +93,7 @@ test('one entrant can locally count, reload, submit, reveal manually and score o
       const api = await import('/src/event-data.js'); await api.connect();
       return api.read(localStorage.getItem('martini.host-room'), 'teamScores/totals');
     });
-    expect(total).toEqual({ A: 200, B: 0, C: 0, D: 0 });
+    expect(total).toEqual({ A: 100, B: 0, C: 0, D: 0 });
     await host.getByRole('button', { name: '초기화', exact: true }).click();
     await expect(host.locator('.presentation-screen-code')).toHaveText('1');
     const game = await host.evaluate(async () => {
@@ -104,7 +104,7 @@ test('one entrant can locally count, reload, submit, reveal manually and score o
   } finally { await Promise.all(contexts.map(context => context.close())); }
 });
 
-test('four entrants reveal together only after all submit and tied teams each get 200', async ({ browser }) => {
+test('four entrants reveal together only after all submit and tied teams each get 100', async ({ browser }) => {
   test.setTimeout(90000);
   const { contexts, host, remote, players, next } = await setup(browser, ['A2', 'B1', 'C1', 'D1']);
   try {
@@ -147,6 +147,6 @@ test('four entrants reveal together only after all submit and tied teams each ge
       const api = await import('/src/event-data.js'); await api.connect();
       return api.read(localStorage.getItem('martini.host-room'), 'teamScores/totals');
     });
-    expect(total).toEqual({ A: 200, B: 200, C: 0, D: 0 });
+    expect(total).toEqual({ A: 100, B: 100, C: 0, D: 0 });
   } finally { await Promise.all(contexts.map(context => context.close())); }
 });
