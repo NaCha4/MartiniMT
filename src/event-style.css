@@ -1037,3 +1037,12 @@ dialog textarea { resize: vertical; }
   .stopwatch-results .is-winner { box-shadow: inset 0 0 0 2px var(--signal-color); }
   .stopwatch-results .is-loser { animation: none; opacity: .32; filter: grayscale(1); }
 }
+.presentation[data-slide="reaction-play"] .presentation-main { padding: 0; position: relative; }
+.reaction-screen { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3vh; background: #000; color: #fff; text-align: center; }
+.reaction-screen h1 { margin: 0; font-size: clamp(56px, 9vw, 160px); }
+.reaction-winner p { margin: 0; font-size: clamp(24px, 3vw, 48px); }
+.reaction-winner > strong { color: var(--color-accent); font-size: clamp(40px, 5vw, 84px); }
+.reaction-mobile { background: #000; color: #fff; }
+.reaction-black, .reaction-tap { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 32px; background: #000; color: #fff; }
+.reaction-tap { touch-action: none; }
+.reaction-tap strong { font-size: clamp(32px, 6vw, 88px); }

@@ -11,6 +11,7 @@ import { liarRosterReady, liarTally, liarOutcome, liarRevealFinished, liarUsedId
 import { stopwatchOutcome, stopwatchRevealFinished, STOPWATCH_MIN_MS, STOPWATCH_MAX_MS } from './stopwatch-model.js';
 import { NUMBER_ROUNDS, NUMBER_VALUES, numberExcludedIds, numberOutcome, numberRevealFinished } from './number-model.js';
 import { memoryExcludedIds, memoryOutcome } from './memory-model.js';
+import { reactionExcludedIds, reactionOutcome } from './reaction-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -80,6 +81,7 @@ export function resetPresentation(room) {
     stopwatchGame: null,
     numberGame: null,
     memoryGame: null,
+    reactionGame: null,
   };
   for (const { path } of Object.values(TASTE_ROUNDS)) changes[path] = null;
   return update(locationRef(room), changes);
@@ -575,6 +577,64 @@ export async function awardMemoryPoints(room, now = Date.now()) {
   });
   const game = result.snapshot.val();
   if (!game?.result) throw { userMessage: '세 라운드를 모두 마친 뒤 점수를 반영합니다.' };
+  const scores = await transactLoaded(locationRef(room, 'teamScores'), current => {
+    if (current?.awards?.[game.control.roundId]) return;
+    return { ...scoreAward(current, game.control.roundId, game.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
+  });
+  return scores.snapshot.val();
+}
+
+export async function prepareReactionGame(room, roster, resetAt = null) {
+  const prior = await Promise.all(['liarGame', 'stopwatchGame', 'numberGame', 'memoryGame'].map(path => read(room, path)));
+  const excluded = Object.fromEntries([...reactionExcludedIds(...prior)].map(id => [id, true]));
+  const roundId = push(locationRef(room, 'reactionGame')).key;
+  const result = await transactLoaded(locationRef(room, 'reactionGame'), current => {
+    if (current) return;
+    if (!Object.keys(roster).some(id => !excluded[id])) throw { userMessage: '이전 게임에 출전하지 않은 참가자가 필요합니다.' };
+    return { control: { roundId, phase: 'selecting', resetAt, updatedAt: serverTimestamp() }, roster, excluded };
+  });
+  const game = result.snapshot.val();
+  if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };
+  return game;
+}
+
+export async function claimReactionEntry(room, participantId, roundId) {
+  const person = await read(room, `reactionGame/roster/${participantId}`);
+  if (!person) throw { userMessage: '등록된 참가자만 출전할 수 있습니다.' };
+  const result = await transactLoaded(locationRef(room, `reactionGame/contestants/${person.team}`), current => current ? undefined
+    : { participantId, ...person, roundId, selectedAt: serverTimestamp() });
+  if (!result.committed) throw { userMessage: '우리 조의 출전자가 이미 정해졌습니다.' };
+}
+
+export async function signalReactionGame(room, roundId) {
+  const result = await transactLoaded(locationRef(room, 'reactionGame'), current => {
+    if (current?.control.roundId !== roundId || current.control.phase !== 'selecting') return;
+    if (!Object.keys(current.contestants ?? {}).length) throw { userMessage: '출전자를 먼저 모집해주세요.' };
+    return { ...current, control: { ...current.control, phase: 'open', signaledAt: serverTimestamp(), updatedAt: serverTimestamp() } };
+  });
+  if (!result.committed) throw { userMessage: '이미 신호를 보냈거나 진행이 초기화되었습니다.' };
+}
+
+export async function submitReactionTap(room, participantId, team, roundId) {
+  let result;
+  try {
+    result = await runTransaction(locationRef(room, 'reactionGame/winner'), current => current ? undefined
+      : { participantId, team, roundId, tappedAt: serverTimestamp() }, { applyLocally: false });
+  } catch (error) {
+    const winner = await read(room, 'reactionGame/winner').catch(() => null);
+    if (winner?.roundId === roundId) return;
+    throw error;
+  }
+  if (result.snapshot.val()?.roundId !== roundId) throw { userMessage: '현재 터치 결과를 확인해주세요.' };
+}
+
+export async function awardReactionPoints(room) {
+  const result = await transactLoaded(locationRef(room, 'reactionGame'), current => {
+    if (!current || current.result) return;
+    return { ...current, control: { ...current.control, phase: 'finished', updatedAt: serverTimestamp() }, result: { points: reactionOutcome(current), revealedAt: serverTimestamp() } };
+  });
+  const game = result.snapshot.val();
+  if (!game?.result) throw { userMessage: '첫 터치 결과를 먼저 확인해주세요.' };
   const scores = await transactLoaded(locationRef(room, 'teamScores'), current => {
     if (current?.awards?.[game.control.roundId]) return;
     return { ...scoreAward(current, game.control.roundId, game.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };

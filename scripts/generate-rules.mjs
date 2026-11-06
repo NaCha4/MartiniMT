@@ -380,6 +380,39 @@ const memoryGameRules = {
   },
   '$other': denyExtra,
 };
+const reaction = `${s}.child('reactionGame')`;
+const reactionScreen = view => STAGES.findIndex(stage => stage.game === 'reaction' && stage.view === view);
+const reactionGameRules = {
+  '.read': controller, '.write': controller,
+  '.validate': `newData.hasChildren(['control','roster']) && newData.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+  control: {
+    '.read': gameReader, '.validate': "newData.hasChildren(['roundId','phase','updatedAt'])",
+    roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' }, updatedAt: storedTimestamp, signaledAt: storedTimestamp,
+    phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'open' || newData.val() === 'finished'" },
+    '$other': denyExtra,
+  },
+  roster: { '$participant': { ...tasteGameRules('reactionGame', 0).roster.$participant, '.read': self } },
+  excluded: { '$participant': { '.read': self, '.validate': 'newData.val() === true' } },
+  contestants: {
+    '.read': gameReader,
+    '$team': {
+      '.write': `${member} && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${reactionScreen('select')} && ${reaction}.child('control/phase').val() === 'selecting' && ${reaction}.child('roster').child(${pid}).child('team').val() === $team && newData.child('participantId').val() === ${pid} && !${reaction}.child('excluded').child(${pid}).exists() && (${numberNotUsed}) && ${numbers}.child('contestants').child($team).child('participantId').val() !== ${pid} && ${memory}.child('contestants').child($team).child('participantId').val() !== ${pid}`,
+      '.validate': `($team === 'A' || $team === 'B' || $team === 'C' || $team === 'D') && newData.hasChildren(['participantId','name','team','teamName','roundId','selectedAt']) && newData.child('roundId').val() === ${reaction}.child('control/roundId').val() && newData.child('team').val() === $team && newData.child('name').val() === ${reaction}.child('roster').child(newData.child('participantId').val()).child('name').val() && newData.child('team').val() === ${reaction}.child('roster').child(newData.child('participantId').val()).child('team').val() && newData.child('teamName').val() === ${reaction}.child('roster').child(newData.child('participantId').val()).child('teamName').val()`,
+      participantId: text(2), name: text(24), team, teamName: text(20), roundId: text(20), selectedAt: storedTimestamp, '$other': denyExtra,
+    },
+  },
+  winner: {
+    '.read': gameReader,
+    '.write': `${member} && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${reactionScreen('play')} && ${reaction}.child('control/phase').val() === 'open' && newData.child('participantId').val() === ${pid} && ${reaction}.child('contestants').child(newData.child('team').val()).child('participantId').val() === ${pid}`,
+    '.validate': `newData.hasChildren(['participantId','team','roundId','tappedAt']) && newData.child('roundId').val() === ${reaction}.child('control/roundId').val() && newData.child('tappedAt').val() >= ${reaction}.child('control/signaledAt').val()`,
+    participantId: text(2), team, roundId: text(20), tappedAt: storedTimestamp, '$other': denyExtra,
+  },
+  result: {
+    '.read': gameReader, '.validate': "newData.hasChildren(['points','revealedAt']) && newData.parent().child('control/phase').val() === 'finished' && newData.parent().child('winner').exists()",
+    points: scoreMap, revealedAt: storedTimestamp, '$other': denyExtra,
+  },
+  '$other': denyExtra,
+};
 const session = {
   '.read': owner,
   '.write': "auth != null && !data.exists() && newData.child('meta/ownerUid').val() === auth.uid && $session.matches(/^[A-Za-z0-9_-]{20}$/)",
@@ -500,6 +533,7 @@ const session = {
   stopwatchGame: stopwatchGameRules,
   numberGame: numberGameRules,
   memoryGame: memoryGameRules,
+  reactionGame: reactionGameRules,
   oxQuestions: { '.read': controller, '.write': controller, ...oxQuestions },
   oxGame: oxGameRules,
   zoomQuestions: { '.read': controller, '.write': controller, ...zoomQuestions },

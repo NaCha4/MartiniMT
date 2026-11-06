@@ -15,7 +15,8 @@ export function createInputController({ document, window, getContext, submitVote
     }
     if (!control.isConnected || control.disabled || voteKey !== getContext().voteKey) return;
     if (pending && (pending.moved || pending.voteKey !== voteKey)) return;
-    if (control.dataset.memoryAction !== undefined) submitVote('memory-action', control.dataset.memoryAction);
+    if (control.dataset.reactionAction !== undefined) submitVote('reaction-action', control.dataset.reactionAction);
+    else if (control.dataset.memoryAction !== undefined) submitVote('memory-action', control.dataset.memoryAction);
     else if (control.dataset.memoryCard !== undefined) submitVote('memory-card', control.dataset.memoryCard);
     else if (control.dataset.numberAction !== undefined) submitVote('number-action', control.dataset.numberAction);
     else if (control.dataset.numberChoice !== undefined) submitVote('number-choice', control.dataset.numberChoice);
@@ -45,9 +46,16 @@ export function createInputController({ document, window, getContext, submitVote
       suppressClickUntil = now() + 400;
       return;
     }
-    const voteControl = event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request], button[data-liar-vote], button[data-liar-action], button[data-stopwatch-action], button[data-number-action], button[data-number-choice], button[data-memory-action], button[data-memory-card]') ?? null;
+    const voteControl = event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request], button[data-liar-vote], button[data-liar-action], button[data-stopwatch-action], button[data-number-action], button[data-number-choice], button[data-memory-action], button[data-memory-card], button[data-reaction-action]') ?? null;
     if (context.participant && !voteControl) return;
     if (voteControl && (voteControl.disabled || event.button !== 0)) return;
+    if (voteControl?.dataset.reactionAction === 'reaction-tap') {
+      if (event.cancelable) event.preventDefault();
+      suppressedVoteControl = voteControl;
+      suppressedVoteUntil = now() + 400;
+      activate(voteControl, context.voteKey);
+      return;
+    }
     suppressedVoteControl = null;
     suppressClickUntil = 0;
     gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, voteControl, voteKey: context.voteKey };
@@ -82,7 +90,7 @@ export function createInputController({ document, window, getContext, submitVote
   window.addEventListener('blur', cancel);
   document.addEventListener('click', event => {
     if (getContext().interactive && event.detail > 0 && now() < suppressClickUntil) {
-      if (event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request], button[data-liar-vote], button[data-liar-action], button[data-stopwatch-action], button[data-number-action], button[data-number-choice], button[data-memory-action], button[data-memory-card]') === suppressedVoteControl) suppressedVoteControl = null;
+      if (event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request], button[data-liar-vote], button[data-liar-action], button[data-stopwatch-action], button[data-number-action], button[data-number-choice], button[data-memory-action], button[data-memory-card], button[data-reaction-action]') === suppressedVoteControl) suppressedVoteControl = null;
       event.preventDefault();
       event.stopImmediatePropagation();
     }

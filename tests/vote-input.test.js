@@ -11,7 +11,7 @@ function votingScreen(kind = 'taste') {
   let renders = 0, framePending = false, time = 1000;
   class Button {
     constructor() {
-      this.dataset = kind === 'zoom' ? { zoomRequest: '' } : kind === 'ox' ? { oxVote: 'O' } : { vote: 'peat' };
+      this.dataset = kind === 'reaction' ? { reactionAction: 'reaction-tap' } : kind === 'zoom' ? { zoomRequest: '' } : kind === 'ox' ? { oxVote: 'O' } : { vote: 'peat' };
       this.disabled = false;
       this.isConnected = true;
       this.listeners = new Map();
@@ -215,4 +215,13 @@ test('OX voting buttons appear only after eligibility, prior vote and result hav
   state.oxReady = true;
   assert.match(context.participantOxView(), /data-ox-vote="O"/);
   assert.match(context.participantOxView(), /data-ox-vote="X"/);
+});
+
+test('reaction sends on pointerdown and suppresses the following pointerup and click', () => {
+  const screen = votingScreen('reaction');
+  screen.pointer('pointerdown');
+  assert.deepEqual(screen.votes, [['reaction-action', 'reaction-tap']]);
+  screen.pointer('pointerup');
+  screen.click();
+  assert.equal(screen.votes.length, 1);
 });
