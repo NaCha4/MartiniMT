@@ -13,6 +13,20 @@ const game = () => ({
   rounds: { 0: { openedAt: 0, request: { id: 'request', participantId: 'A1', submittedAt: 1000 } } },
 });
 
+test('bundled default photos use rule-compatible paths on both Pages and the development server', () => {
+  const source = readFileSync(new URL('../src/event-app.js', import.meta.url), 'utf8');
+  const defaults = source.slice(source.indexOf('const DEFAULT_ZOOM_QUESTIONS'), source.indexOf('const $ ='));
+  for (const [href, asset, expected] of [
+    ['https://nacha4.github.io/MartiniMT/?room=test', './assets/photo.jpg', '/MartiniMT/assets/photo.jpg'],
+    ['http://127.0.0.1:5173/?room=test', '/src/assets/photo.jpg', '/src/assets/photo.jpg'],
+  ]) {
+    const context = vm.createContext({ URL, location: { href }, peatImage: asset, sherryImage: asset, bourbonImage: asset, chamisulImage: asset, jinroImage: asset });
+    vm.runInContext(`${defaults}\nglobalThis.questions = DEFAULT_ZOOM_QUESTIONS;`, context);
+    assert.equal(Object.keys(context.questions).length, 5);
+    assert.ok(Object.values(context.questions).every(question => question.image === expected));
+  }
+});
+
 test('zoom participants wait safely before game control arrives', () => {
   for (const control of [undefined, null]) {
     const html = zoomParticipant({ game: { control }, round: {}, participant: { team: 'A' }, participantId: 'A1', error: '' });

@@ -179,7 +179,7 @@ function revealTransition({ scored = false, now = 1000 } = {}) {
     presentation: { resetAt: 1 }, liarGame: { control: { resetAt: 1 }, rounds: { 0: round } }, teamScores: scored ? { awards: { round: {} } } : null };
   const calls = [], timers = [], errors = [];
   const context = vm.createContext({
-    state, STAGES, stageIndex, LIAR_REVEAL_DURATION, Date: { now: () => now },
+    state, STAGES, stageIndex, LIAR_REVEAL_DURATION, liarRevealFinished, Date: { now: () => now },
     clearTimeout() {}, setTimeout(callback, delay) { timers.push({ callback, delay }); return timers.length; }, schedule() {},
     syncPresentation(value) { state.slideIndex = value.slideIndex; }, showGameError(error) { errors.push(error); },
     api: {
@@ -210,4 +210,17 @@ test('reset cancels a pending liar reveal transition', async () => {
   transition.state.presentation.resetAt = 2;
   await transition.timers[0].callback();
   assert.deepEqual(transition.calls, []);
+});
+
+test('an early reveal timer waits again without reporting a scoring error', async () => {
+  const transition = revealTransition({ now: 1500 });
+  transition.setNow(2999);
+  await transition.timers[0].callback();
+  assert.deepEqual(transition.calls, []);
+  assert.deepEqual(transition.errors, []);
+  assert.equal(transition.state.busy, false);
+  transition.setNow(3000);
+  transition.context.scheduleLiarProgress();
+  await transition.timers.at(-1).callback();
+  assert.deepEqual(transition.calls, ['award', 'follow']);
 });

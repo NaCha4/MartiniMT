@@ -181,3 +181,27 @@ test('the host presentation includes its error banner', () => {
   vm.runInContext(view.replaceAll('import.meta.env.DEV', 'false'), context);
   assert.match(context.presentationView(), /<div role="alert">연결 오류<\/div>/);
 });
+
+test('memory locks every visible card synchronously while a flip is being sent', async () => {
+  const cards = [{ disabled: false }, { disabled: false }];
+  let complete, submissions = 0;
+  const state = { memoryReady: true, participant: { team: 'A' }, participantId: 'A4', online: true, serverOffset: 0 };
+  const game = { control: { phase: 'running', roundId: 'round' }, contestants: { A: { participantId: 'A4' } } };
+  const context = vm.createContext({
+    state,
+    document: { hidden: false, querySelectorAll: () => cards },
+    tasteContext: () => ({ game, slide: { game: 'memory', view: 'play' } }),
+    memoryLayouts: () => [], memoryPlayer: () => ({ roundIndex: 0, sequence: 0 }), memoryCanFlip: () => true,
+    schedule() {}, showError: error => { throw error; },
+    api: { submitMemoryFlip() { submissions++; return new Promise(resolve => { complete = resolve; }); } },
+  });
+  vm.runInContext(source.slice(source.indexOf('async function memoryAction('), source.indexOf('async function numberAction(')), context);
+  const pending = context.memoryAction('memory-flip', 0);
+  assert.equal(state.voting, true);
+  assert.ok(cards.every(card => card.disabled));
+  await context.memoryAction('memory-flip', 1);
+  assert.equal(submissions, 1);
+  complete();
+  await pending;
+  assert.equal(state.voting, false);
+});

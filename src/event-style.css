@@ -769,7 +769,7 @@ dialog textarea { resize: vertical; }
 .score-rank small { margin-left: 10px; font-size: .35em; }
 .score-row h2 { margin: 0; flex: 1; font-size: clamp(24px, 3vw, 55px); }
 .score-earned { color: var(--signal-color, var(--color-accent)); font-size: clamp(20px, 2.5vw, 44px); }
-.score-row strong { width: 10vw; text-align: right; font-size: clamp(35px, 4.5vw, 90px); }
+.score-row strong { min-width: 4ch; flex-shrink: 0; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; font-size: clamp(35px, 4.5vw, 90px); }
 .score-unit { font-size: clamp(18px, 2vw, 36px); color: var(--color-text-secondary); }
 @keyframes rank-move { from { top: calc(var(--from-rank) * 25%); } to { top: calc(var(--to-rank) * 25%); } }
 .taste-mobile { display: flex; flex-direction: column; justify-content: center; gap: 3vh; padding: max(58px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 24px max(24px, env(safe-area-inset-left)); text-align: center; }

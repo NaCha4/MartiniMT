@@ -1,4 +1,24 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+
+test('four-digit and larger cumulative scores stay on one line within their rows', async ({ page }) => {
+  const styles = await readFile(new URL('../../src/event-style.css', import.meta.url), 'utf8');
+  const tokens = await readFile(new URL('../../src/design-tokens.css', import.meta.url), 'utf8');
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 960 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(viewport);
+    await page.setContent(`<style>${tokens}\n${styles.replace(/^@import[^;]+;/, '')}</style><div class="presentation"><main class="presentation-main"><section class="taste-screen taste-score"><div class="scoreboard" style="--score-elapsed:-5s">${['1080', '9900', '10500', '100000'].map((score, index) => `<article class="score-row" style="--from-rank:${index};--to-rank:${index}"><span class="score-rank">${index + 1}<small>위</small></span><h2>${index + 1}조</h2><span class="score-earned">+200</span><strong>${score}</strong><span class="score-unit">점</span></article>`).join('')}</div></section></main></div>`);
+    const fits = await page.locator('.score-row strong').evaluateAll(scores => scores.every(score => {
+      const range = document.createRange();
+      range.selectNodeContents(score);
+      const text = range.getBoundingClientRect();
+      const row = score.closest('.score-row').getBoundingClientRect();
+      return range.getClientRects().length === 1 && text.left >= row.left && text.right <= row.right
+        && text.top >= row.top && text.bottom <= row.bottom;
+    }));
+    expect(fits).toBe(true);
+  }
+  await page.screenshot({ path: '.cache/audit-large-score-layout.png' });
+});
 
 test('local presentation errors stay dismissible and remote dismissal preserves newer errors', async ({ browser }) => {
   const desktop = await browser.newContext({ viewport: { width: 1366, height: 768 }, screen: { width: 1920, height: 1080 } });

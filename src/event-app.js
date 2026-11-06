@@ -50,7 +50,7 @@ const MILITARY_VISUALS = {
 const DEFAULT_ZOOM_QUESTIONS = Object.fromEntries([
   [peatImage, '피트 위스키'], [sherryImage, '셰리 위스키'], [bourbonImage, '버번 위스키'],
   [chamisulImage, '참이슬'], [jinroImage, '진로'],
-].map(([image, answer], index) => [index, { image, answer, focusX: 50, focusY: 50 }]));
+].map(([image, answer], index) => [index, { image: new URL(image, location.href).pathname, answer, focusX: 50, focusY: 50 }]));
 
 const $ = selector => document.querySelector(selector);
 const local = {
@@ -920,6 +920,7 @@ function scheduleLiarProgress() {
   const stillCurrent = () => state.slideIndex === expectedIndex && (state.presentation?.resetAt ?? null) === resetAt && state.liarGame.rounds?.[slide.questionIndex]?.roundId === round.roundId;
   liarTimer = setTimeout(async () => {
     if (!stillCurrent()) return;
+    if (!liarRevealFinished(round, Date.now() + state.serverOffset)) { schedule(); return; }
     liarAdvancing = true; liarPendingId = round.roundId;
     state.busy = true; schedule();
     try {
@@ -1105,6 +1106,8 @@ async function memoryAction(name, cardIndex) {
   if (name === 'memory-flip' && (slide.view !== 'play' || game.control?.phase !== 'running'
     || game.contestants?.[state.participant.team]?.participantId !== state.participantId || !memoryCanFlip(player, cardIndex, now))) return;
   state.voting = true; state.error = ''; schedule();
+  // Lock the current DOM before the next animation frame can redraw it.
+  for (const card of document.querySelectorAll('[data-memory-card]')) card.disabled = true;
   try {
     if (name === 'memory-confirm' && slide.view === 'select' && game.control?.phase === 'selecting') {
       await api.claimMemoryEntry(state.room, state.participantId, game.control.roundId);

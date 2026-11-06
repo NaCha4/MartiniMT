@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   testDir: './tests/browser',
@@ -6,6 +7,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: 'list',
+  globalSetup: fileURLToPath(new URL('./tests/browser-setup.js', import.meta.url)),
   use: { baseURL: 'http://127.0.0.1:5174', viewport: { width: 1440, height: 960 }, screenshot: 'only-on-failure', trace: 'retain-on-failure', launchOptions: { channel: 'chrome' } },
   webServer: { command: 'npm run dev:emulators -- --host 127.0.0.1 --port 5174', url: 'http://127.0.0.1:5174', reuseExistingServer: !process.env.CI, timeout: 30000 },
 });
