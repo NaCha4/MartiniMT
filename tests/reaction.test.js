@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { STAGES, stageIndex } from '../src/event-model.js';
-import { reactionExcludedIds, reactionOutcome, reactionSubmitted } from '../src/reaction-model.js';
+import { createReactionClock, reactionExcludedIds, reactionOutcome, reactionSubmitted } from '../src/reaction-model.js';
 import { createStopwatchClock } from '../src/stopwatch-model.js';
 import { reactionPresentation, reactionParticipant, reactionControls } from '../src/reaction-view.js';
 
@@ -24,11 +24,13 @@ test('reaction excludes all prior game entrants and awards exactly the winning t
   assert.throws(() => reactionOutcome({ ...game, winner: { ...game.winner, roundId: 'old' } }));
 });
 
-test('reaction waits on black, only enables entrants after signal, and reveals the winner', () => {
+test('reaction labels the waiting screen, catches early taps and enables entrants after signal', () => {
   const game = { control: { phase: 'selecting', roundId: 'round' }, contestants: { A: { participantId: 'A5', name: '선수' } } };
   const slide = { view: 'play' };
   const props = { game, slide, participant: { team: 'A' }, participantId: 'A5', ready: true };
-  assert.doesNotMatch(reactionPresentation(game, slide), /<h1>/);
+  assert.match(reactionPresentation(game, slide), /<h1>터치를 기다리세요<\/h1>/);
+  assert.match(reactionParticipant(props), /data-reaction-action="reaction-false-start"/);
+  assert.doesNotMatch(reactionParticipant({ ...props, participantId: 'A6' }), /data-reaction-action/);
   assert.doesNotMatch(reactionParticipant(props), /reaction-tap/);
   assert.match(reactionControls(game, slide, false), /터치 신호 보내기/);
   game.control.phase = 'open';
@@ -38,6 +40,43 @@ test('reaction waits on black, only enables entrants after signal, and reveals t
   game.winner = { team: 'A', participantId: 'A5', roundId: 'round' };
   assert.match(reactionPresentation(game, slide), /\+100점/);
   assert.doesNotMatch(reactionParticipant(props), /reaction-tap/);
+});
+
+test('false starts are final, excluded from scoring and displayed without a reaction time', () => {
+  const game = {
+    control: { roundId: 'round', localTiming: true, phase: 'open' },
+    contestants: { A: { participantId: 'A1', name: '성급한 선수' }, B: { participantId: 'B1' } },
+    submissions: {
+      A: { participantId: 'A1', roundId: 'round', elapsedMs: 0, disqualified: true },
+      B: { participantId: 'B1', roundId: 'round', elapsedMs: 250 },
+    },
+  };
+  const props = { game, slide: { view: 'play' }, participant: { team: 'A' }, participantId: 'A1', ready: true };
+  assert.equal(reactionSubmitted(game), true);
+  assert.deepEqual(reactionOutcome(game), { A: 0, B: 100, C: 0, D: 0 });
+  assert.match(reactionParticipant(props), /<h1>실격<\/h1>/);
+  assert.doesNotMatch(reactionParticipant(props), /reaction-tap/);
+  assert.match(reactionControls(game, props.slide, false), /실격 1명/);
+  game.result = { points: reactionOutcome(game), elapsedMs: { A: 0, B: 250 }, disqualified: { A: true } };
+  assert.match(reactionPresentation(game, props.slide), /<b>실격<\/b>/);
+  assert.doesNotMatch(reactionParticipant(props), /0\.000초/);
+  game.submissions.B = { ...game.submissions.B, disqualified: true, elapsedMs: 0 };
+  assert.deepEqual(reactionOutcome(game), { A: 0, B: 0, C: 0, D: 0 });
+});
+
+test('local false starts survive a delayed signal, reload and storage failure', () => {
+  const values = new Map();
+  const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  const clock = createReactionClock({ storage });
+  clock.disqualify('round');
+  assert.equal(clock.start('round').disqualified, true);
+  const restored = createReactionClock({ storage });
+  assert.equal(restored.read('round').disqualified, true);
+  assert.equal(restored.start('round').disqualified, true);
+  assert.equal(restored.read('next-round'), undefined);
+  const unavailable = createReactionClock({ storage: { getItem() { throw Error('unavailable'); }, setItem() { throw Error('unavailable'); } } });
+  unavailable.disqualify('round');
+  assert.equal(unavailable.read('round').disqualified, true);
 });
 
 test('local reaction results compare elapsed time regardless of arrival order and reward exact ties', () => {

@@ -1044,8 +1044,9 @@ dialog textarea { resize: vertical; }
 .reaction-winner > strong { color: var(--color-accent); font-size: clamp(40px, 5vw, 84px); }
 .reaction-mobile { background: #000; color: #fff; }
 .reaction-black, .reaction-tap { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 32px; background: #000; color: #fff; }
-.reaction-tap { touch-action: none; }
-.reaction-tap strong { font-size: clamp(32px, 6vw, 88px); }
+.reaction-black, .reaction-tap { touch-action: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; }
+.reaction-black strong, .reaction-tap strong { font-size: clamp(32px, 6vw, 88px); }
+.reaction-black span { font-size: clamp(16px, 3vw, 28px); }
 .reaction-results { padding: 7vh 6vw; }
 .reaction-results h1 { font-size: clamp(30px, 4vw, 64px); }
 .reaction-results .liar-contestants { width: 100%; flex: 0 1 65%; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }

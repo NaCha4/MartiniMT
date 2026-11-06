@@ -225,3 +225,14 @@ test('reaction sends on pointerdown and suppresses the following pointerup and c
   screen.click();
   assert.equal(screen.votes.length, 1);
 });
+
+test('reaction false starts register when touched even if held until after the signal', () => {
+  const screen = votingScreen('reaction');
+  screen.button.dataset.reactionAction = 'reaction-false-start';
+  screen.pointer('pointerdown');
+  assert.deepEqual(screen.votes, [['reaction-action', 'reaction-false-start']]);
+  screen.state.control.phase = 'open';
+  screen.pointer('pointerup');
+  screen.click();
+  assert.equal(screen.votes.length, 1);
+});

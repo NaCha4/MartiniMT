@@ -19,7 +19,7 @@ import { numberControls, numberPresentation, numberParticipant, numberResultCapt
 import { MEMORY_PREVIEW_MS, memoryPlayer, memoryCanFlip, memoryStandings, memoryFinished, memoryLayouts } from './memory-model.js';
 import { memoryControls, memoryPresentation, memoryParticipant } from './memory-view.js';
 import { reactionControls, reactionPresentation, reactionParticipant } from './reaction-view.js';
-import { reactionSubmitted } from './reaction-model.js';
+import { createReactionClock, reactionSubmitted } from './reaction-model.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
@@ -87,7 +87,7 @@ const state = {
 let stopwatchStorage;
 try { stopwatchStorage = window.sessionStorage; } catch { /* Timing can continue in memory. */ }
 const stopwatchClock = createStopwatchClock({ storage: stopwatchStorage });
-const reactionClock = createStopwatchClock({ storage: stopwatchStorage, minimumMs: 0, round: Math.round });
+const reactionClock = createReactionClock({ storage: stopwatchStorage });
 const reactionKey = () => `martini.reaction.${state.room}.${state.participantId}.${state.reactionGame.control?.roundId}`;
 let reactionFinalizing = false, reactionRetryAt = 0, reactionRetryTimer;
 let stopwatchTimer, stopwatchFrame;
@@ -576,7 +576,7 @@ function participantView() {
   if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>참가자 입장</h1><p>등록된 이름을 입력하세요.</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${TEAM_NAMES[id[0]]} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
   if (state.presentation?.active && state.presentation.slideIndex >= 2) {
     const slide = STAGES[state.presentation.slideIndex];
-    if (slide.game === 'reaction') return reactionParticipant({ game: state.reactionGame, slide, participant: state.participant, participantId: state.participantId, ready: state.reactionReady, disabled: state.busy || state.voting || (!state.online && state.reactionGame.control?.phase !== 'open') || state.controlsLocked, confirming: state.reactionConfirm, attempt: reactionClock.read(reactionKey()), error: errorBanner() });
+    if (slide.game === 'reaction') return reactionParticipant({ game: state.reactionGame, slide, participant: state.participant, participantId: state.participantId, ready: state.reactionReady, disabled: state.busy || state.voting || (!state.online && (slide.view !== 'play' || !['selecting', 'open'].includes(state.reactionGame.control?.phase))) || state.controlsLocked, confirming: state.reactionConfirm, attempt: reactionClock.read(reactionKey()), error: errorBanner() });
     if (slide.game === 'memory') return memoryParticipant({ game: state.memoryGame, slide, participant: state.participant, participantId: state.participantId, ready: state.memoryReady, disabled: state.voting || !state.online || state.controlsLocked, confirming: state.memoryConfirm, error: errorBanner(), now: Date.now() + state.serverOffset });
     if (slide.game === 'number') return numberParticipant({ game: state.numberGame, slide, participant: state.participant, participantId: state.participantId, ready: state.numberReady, disabled: state.busy || state.voting || !state.online || state.controlsLocked, confirming: state.numberConfirm, choice: state.numberChoice, error: errorBanner(), now: Date.now() + state.serverOffset });
     if (slide.game === 'stopwatch') {
@@ -1176,10 +1176,13 @@ async function reactionAction(name) {
       await api.claimReactionEntry(state.room, state.participantId, game.control.roundId);
       state.reactionConfirm = false;
     }
-    if (['reaction-tap', 'reaction-retry'].includes(name) && slide.view === 'play' && game.control?.phase === 'open' && !game.winner && !game.submissions?.[state.participant.team]
+    if (['reaction-false-start', 'reaction-tap', 'reaction-retry'].includes(name) && slide.view === 'play' && ['selecting', 'open'].includes(game.control?.phase) && !game.winner && !game.submissions?.[state.participant.team]
       && game.contestants?.[state.participant.team]?.participantId === state.participantId) {
-      const elapsedMs = game.control.localTiming ? reactionClock.stop(reactionKey()) : undefined;
-      await api.submitReactionTap(state.room, state.participantId, state.participant.team, game.control.roundId, elapsedMs);
+      if (name === 'reaction-false-start') reactionClock.disqualify(reactionKey());
+      const disqualified = reactionClock.read(reactionKey())?.disqualified === true;
+      if (!disqualified && game.control.phase !== 'open') return;
+      const elapsedMs = disqualified ? 0 : game.control.localTiming ? reactionClock.stop(reactionKey()) : undefined;
+      await api.submitReactionTap(state.room, state.participantId, state.participant.team, game.control.roundId, elapsedMs, disqualified);
     }
   } catch (error) { showError(error); }
   finally { state.voting = false; schedule(); }

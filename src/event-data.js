@@ -615,11 +615,11 @@ export async function signalReactionGame(room, roundId) {
   if (!result.committed) throw { userMessage: '이미 신호를 보냈거나 진행이 초기화되었습니다.' };
 }
 
-export async function submitReactionTap(room, participantId, team, roundId, elapsedMs) {
+export async function submitReactionTap(room, participantId, team, roundId, elapsedMs, disqualified = false) {
   if (elapsedMs !== undefined) {
     if (!Number.isInteger(elapsedMs) || elapsedMs < 0 || elapsedMs > 86400000) throw { userMessage: '반응 시간을 확인해주세요.' };
     const result = await transactLoaded(locationRef(room, `reactionGame/submissions/${team}`), current => current ? undefined
-      : { participantId, roundId, elapsedMs, submittedAt: serverTimestamp() });
+      : { participantId, roundId, elapsedMs, ...(disqualified ? { disqualified: true } : {}), submittedAt: serverTimestamp() });
     const saved = result.snapshot.val();
     if (saved?.roundId !== roundId || saved?.participantId !== participantId) throw { userMessage: '현재 제출 결과를 확인해주세요.' };
     return;
@@ -640,7 +640,8 @@ export async function awardReactionPoints(room) {
   const result = await transactLoaded(locationRef(room, 'reactionGame'), current => {
     if (!current || current.result) return;
     const elapsedMs = current.control.localTiming ? Object.fromEntries(Object.keys(current.contestants ?? {}).map(team => [team, current.submissions[team]?.elapsedMs])) : null;
-    return { ...current, control: { ...current.control, phase: 'finished', updatedAt: serverTimestamp() }, result: { points: reactionOutcome(current), elapsedMs, revealedAt: serverTimestamp() } };
+    const disqualified = Object.fromEntries(Object.keys(current.contestants ?? {}).filter(team => current.submissions?.[team]?.disqualified).map(team => [team, true]));
+    return { ...current, control: { ...current.control, phase: 'finished', updatedAt: serverTimestamp() }, result: { points: reactionOutcome(current), elapsedMs, disqualified, revealedAt: serverTimestamp() } };
   });
   const game = result.snapshot.val();
   if (!game?.result) throw { userMessage: '첫 터치 결과를 먼저 확인해주세요.' };

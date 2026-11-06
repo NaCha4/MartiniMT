@@ -88,3 +88,28 @@ test('local reaction accepts one elapsed duration per entrant and protects hidde
   await update(at('host', 'reactionGame'), { 'control/phase': 'finished', 'control/updatedAt': serverTimestamp(), result: { points: { A: 0, B: 100, C: 0, D: 0 }, elapsedMs: { A: 350, B: 180 }, revealedAt: serverTimestamp() } });
   await assertSucceeds(get(at('B1', 'reactionGame/result')));
 });
+
+test('false starts are restricted to entrants during play and cannot be replaced or scored', async () => {
+  await update(at('host', 'reactionGame/control'), { localTiming: true });
+  await enter('A5'); await enter('B5');
+  const disqualify = (id, changes = {}) => set(at(id, `reactionGame/submissions/${id[0]}`), { participantId: id, roundId, elapsedMs: 0, disqualified: true, submittedAt: serverTimestamp(), ...changes });
+  await assertFails(disqualify('A5'));
+  await set(at('host', 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'reaction-play'), updatedAt: serverTimestamp() });
+  await assertFails(disqualify('A6'));
+  await assertFails(disqualify('A5', { participantId: 'B5' }));
+  await assertFails(disqualify('A5', { roundId: 'old' }));
+  await assertFails(disqualify('A5', { disqualified: false }));
+  await assertFails(disqualify('A5', { elapsedMs: 200 }));
+  await assertSucceeds(disqualify('A5'));
+  await assertFails(remove(at('A5', 'reactionGame/submissions/A')));
+  await assertFails(get(at('B5', 'reactionGame/submissions/A')));
+  await signal();
+  await assertFails(set(at('A5', 'reactionGame/submissions/A'), { participantId: 'A5', roundId, elapsedMs: 100, submittedAt: serverTimestamp() }));
+  await assertSucceeds(disqualify('B5'));
+  const result = { points: { A: 0, B: 0, C: 0, D: 0 }, elapsedMs: { A: 0, B: 0 }, disqualified: { A: true, B: true }, revealedAt: serverTimestamp() };
+  const finish = value => update(at('host', 'reactionGame'), { 'control/phase': 'finished', 'control/updatedAt': serverTimestamp(), result: value });
+  await assertFails(finish({ ...result, points: { A: 100, B: 0, C: 0, D: 0 } }));
+  await assertFails(finish({ ...result, disqualified: null }));
+  await assertSucceeds(finish(result));
+  await assertSucceeds(get(at('B1', 'reactionGame/result')));
+});

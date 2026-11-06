@@ -49,7 +49,7 @@ export function createInputController({ document, window, getContext, submitVote
     const voteControl = event.target?.closest?.('button[data-vote], button[data-ox-vote], button[data-zoom-request], button[data-liar-vote], button[data-liar-action], button[data-stopwatch-action], button[data-number-action], button[data-number-choice], button[data-memory-action], button[data-memory-card], button[data-reaction-action]') ?? null;
     if (context.participant && !voteControl) return;
     if (voteControl && (voteControl.disabled || event.button !== 0)) return;
-    if (voteControl?.dataset.reactionAction === 'reaction-tap') {
+    if (['reaction-tap', 'reaction-false-start'].includes(voteControl?.dataset.reactionAction)) {
       if (event.cancelable) event.preventDefault();
       suppressedVoteControl = voteControl;
       suppressedVoteUntil = now() + 400;
