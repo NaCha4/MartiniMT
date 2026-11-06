@@ -744,6 +744,7 @@ dialog textarea { resize: vertical; }
 .liar-result h1 { margin: 1vh 0; font-size: clamp(28px, 3vw, 52px); }
 .liar-result p { margin: 0; color: var(--color-text-secondary); font-size: clamp(20px, 2vw, 36px); }
 .liar-vote-results .liar-contestant { position: relative; justify-content: center; gap: 2vh; }
+.liar-contestant.is-empty { opacity: .3; }
 .liar-vote-bar { height: 7px; background: rgb(255 255 255 / 10%); margin-top: 1vh; }
 .liar-vote-bar i { display: block; height: 100%; background: var(--signal-color); }
 .liar-vote-count { color: var(--signal-color); font-size: clamp(36px, 5vw, 80px); line-height: 1; }
@@ -859,3 +860,13 @@ dialog textarea { resize: vertical; }
 @media (prefers-reduced-motion: reduce) {
   .reveal-person.is-correct, .reveal-person.is-correct i, .score-row { animation-duration: 1ms; }
 }
+.stopwatch-screen { gap: 2vh; }
+.stopwatch-screen h1 { margin: 1vh 0; }
+.stopwatch-contestant { gap: clamp(10px, 1.5vh, 20px); padding: clamp(12px, 1.5vw, 28px); }
+.stopwatch-contestant p { margin: 0; font-size: clamp(14px, 1.4vw, 22px); }
+.stopwatch-contestant.is-winner { border-color: var(--signal-color); box-shadow: 0 0 0 3px var(--signal-color); }
+.stopwatch-time { font-size: clamp(24px, 3.2vw, 54px); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.1; }
+.stopwatch-time small { margin-left: 5px; font-size: .4em; }
+.stopwatch-status { font-size: clamp(18px, 2vw, 30px); }
+.stopwatch-award { font-size: clamp(24px, 3vw, 42px); }
+.stopwatch-mobile h1 { text-align: center; }

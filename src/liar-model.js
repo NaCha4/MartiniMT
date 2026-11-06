@@ -5,7 +5,7 @@ export const LIAR_ROUND_COUNT = 3;
 export const LIAR_REVEAL_DURATION = 2000;
 
 export function liarRosterReady(roster) {
-  return TEAM_IDS.every(team => Object.values(roster ?? {}).filter(person => person.team === team).length >= LIAR_ROUND_COUNT);
+  return Object.keys(roster ?? {}).length > 0;
 }
 
 export function liarUsedIds(game) {

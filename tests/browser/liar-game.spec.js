@@ -1,5 +1,69 @@
 import { test, expect } from '@playwright/test';
 
+test('one, two and three entrants can finish the full liar game with empty teams', async ({ browser }) => {
+  test.setTimeout(90000);
+  const contexts = await Promise.all(Array.from({ length: 3 }, () => browser.newContext()));
+  const [host, remote, audience] = await Promise.all(contexts.map(context => context.newPage()));
+  for (const context of contexts.slice(1)) await context.addInitScript(() => Object.defineProperty(document, 'fullscreenEnabled', { get: () => false }));
+  try {
+    await host.goto('/');
+    await expect(host.locator('#manager-name')).toBeEnabled();
+    await host.locator('#manager-name').fill('진행자');
+    for (const id of ['A1', 'A2', 'A3', 'B1', 'B2', 'C1', 'D1']) await host.locator(`#name-${id}`).fill(`${id[0]}선수${id[1]}`);
+    await host.getByRole('button', { name: '발표 시작', exact: true }).click();
+    const invite = await host.locator('#invite-url').inputValue();
+    for (const [page, name] of [[remote, '진행자'], [audience, 'D선수1']]) {
+      await page.goto(invite);
+      await page.locator('#real-name').fill(name);
+      await page.getByRole('button', { name: '입장', exact: true }).click();
+    }
+    await host.evaluate(async () => {
+      const api = await import('/src/event-data.js'); await api.connect();
+      const { STAGES } = await import('/src/event-model.js');
+      await api.setPresentationSlide(localStorage.getItem('martini.host-room'), STAGES.findIndex(stage => stage.id === 'zoom-score'));
+    });
+    const next = () => remote.getByRole('button', { name: '다음 화면', exact: true }).click();
+    await next();
+    await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeEnabled();
+    const entries = [['A1'], ['A2', 'B1'], ['A3', 'B2', 'C1']];
+    for (const [index, ids] of entries.entries()) {
+      await next();
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(39 + index * 3));
+      await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+      await expect(host.locator('[data-action="liar-auto-entry"]')).toHaveCount(0);
+      await host.evaluate(async ({ index, ids }) => {
+        const api = await import('/src/event-data.js'); await api.connect();
+        const room = localStorage.getItem('martini.host-room'), game = await api.read(room, 'liarGame');
+        for (const id of ids) await api.claimLiarEntry(room, id, index, game.control.roundId);
+      }, { index, ids });
+      await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeEnabled();
+      await next();
+      await remote.getByRole('button', { name: '단어 전달', exact: true }).click();
+      const cards = await host.evaluate(async index => {
+        const api = await import('/src/event-data.js'); await api.connect();
+        const round = await api.read(localStorage.getItem('martini.host-room'), `liarGame/rounds/${index}`);
+        return { ids: Object.keys(round.cards), blankWords: Object.values(round.cards).filter(card => !card.word).length, liarId: round.secret.liarId };
+      }, index);
+      expect(cards.ids.sort()).toEqual([...ids].sort());
+      expect(cards.blankWords).toBe(1);
+      expect(ids).toContain(cards.liarId);
+      await remote.getByRole('button', { name: '투표', exact: true }).click();
+      await expect(remote.locator('.remote-game-controls')).toContainText(`0 / ${7 - ids.length}명 투표`);
+      await expect(audience.locator('[data-liar-vote]')).toHaveCount(ids.length);
+      await audience.locator('[data-liar-vote]').first().click();
+      await expect(audience.getByRole('heading', { name: '투표 완료', exact: true })).toBeVisible();
+      await remote.getByRole('button', { name: '투표 종료', exact: true }).click();
+      await expect(host.locator('.liar-vote-results .is-empty')).toHaveCount(4 - ids.length);
+      await expect(host.locator('.liar-vote-count')).toHaveCount(ids.length);
+      await remote.getByRole('button', { name: '정답 공개', exact: true }).click();
+      await expect(host.locator('.liar-badge')).toHaveCount(1);
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(41 + index * 3));
+    }
+    await host.getByRole('button', { name: '초기화', exact: true }).click();
+    await expect(host.locator('.presentation-screen-code')).toHaveText('1');
+  } finally { await Promise.all(contexts.map(context => context.close())); }
+});
+
 test('three liar rounds confirm unique entrants, deliver private words, exclude players from voting and award each result once', async ({ browser }) => {
   test.setTimeout(180000);
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 960 } });
@@ -125,7 +189,7 @@ test('three liar rounds confirm unique entrants, deliver private words, exclude 
         await host.screenshot({ path: '.cache/screenshots/liar-score.png' });
       }
     }
-    await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+    await expect(host.locator('.presentation-screen-code')).toHaveText('47');
     await host.getByRole('button', { name: '초기화', exact: true }).click();
     await expect(host.locator('.presentation-screen-code')).toHaveText('1');
     expect(await host.evaluate(async () => { const api = await import('/src/event-data.js'); await api.connect(); return api.read(localStorage.getItem('martini.host-room'), 'liarGame'); })).toBeNull();

@@ -40,6 +40,56 @@ function liarEntry(id, roundId = liarRoundId) {
 }
 const enterLiar = (id, index = 0, roundId = liarRoundId) => set(location(db(id), `liarGame/rounds/${index}/contestants/${id[0]}`), liarEntry(id, roundId));
 
+const stopwatchRoundId = 's'.repeat(20);
+async function createStopwatchGame() {
+  await createLiarGame();
+  await enterLiar('A1');
+  await set(location(db('host'), 'stopwatchGame'), {
+    control: { roundId: stopwatchRoundId, phase: 'selecting', updatedAt: serverTimestamp() },
+    roster: liarRoster.participants, excluded: { A1: true },
+  });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'stopwatch-select'), updatedAt: serverTimestamp() });
+}
+const enterStopwatch = (id, roundId = stopwatchRoundId) => set(location(db(id), `stopwatchGame/contestants/${id[0]}`), { ...liarEntry(id), roundId });
+const submitStopwatch = (id, elapsedMs = 10000, roundId = stopwatchRoundId) => set(location(db(id), `stopwatchGame/submissions/${id[0]}`), { participantId: id, roundId, elapsedMs, submittedAt: serverTimestamp() });
+
+test('stopwatch excludes prior liar entrants and keeps one participant per team', async () => {
+  await createStopwatchGame();
+  await assertFails(enterStopwatch('A1'));
+  await assertFails(enterStopwatch('A2', 'old'.padEnd(20, '_')));
+  const results = await Promise.allSettled([enterStopwatch('A2'), enterStopwatch('A3')]);
+  assert.equal(results.filter(value => value.status === 'fulfilled').length, 1);
+  await assertSucceeds(enterStopwatch('B1'));
+  await update(location(db('host'), 'stopwatchGame/control'), { phase: 'running', updatedAt: serverTimestamp() });
+  await assertFails(enterStopwatch('C1'));
+  await assertFails(set(location(db('B1'), 'stopwatchGame/result'), { points: { A: 0, B: 100, C: 0, D: 0 } }));
+});
+
+test('stopwatch submissions validate timing and ownership, hide records, and reject duplicates and stale rounds', async () => {
+  await createStopwatchGame();
+  await enterStopwatch('A2'); await enterStopwatch('B1');
+  await assertFails(submitStopwatch('A2'));
+  await update(location(db('host'), 'stopwatchGame/control'), { phase: 'running', updatedAt: serverTimestamp() });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'stopwatch-play'), updatedAt: serverTimestamp() });
+  await assertFails(submitStopwatch('A1'));
+  for (const value of [999, 10000.5, -1, 86400001, '10000']) await assertFails(submitStopwatch('A2', value));
+  await assertFails(submitStopwatch('A2', 10000, 'old'.padEnd(20, '_')));
+  await assertSucceeds(submitStopwatch('A2', 9900));
+  await assertFails(submitStopwatch('A2', 10000));
+  await assertFails(remove(location(db('A2'), 'stopwatchGame/submissions/A')));
+  await assertSucceeds(get(location(db('A2'), 'stopwatchGame/submissions/A')));
+  await assertFails(get(location(db('B1'), 'stopwatchGame/submissions/A')));
+  await assertFails(get(location(db('A3'), 'stopwatchGame/submissions/A/elapsedMs')));
+  await assertSucceeds(get(location(db('A3'), 'stopwatchGame/submissions/A/submittedAt')));
+  await assertSucceeds(submitStopwatch('B1', 10100));
+  await update(location(db('host'), 'stopwatchGame'), { 'control/phase': 'revealed', 'control/updatedAt': serverTimestamp(), result: { elapsedMs: { A: 9900, B: 10100 }, points: { A: 100, B: 100, C: 0, D: 0 }, revealedAt: serverTimestamp() } });
+  await assertSucceeds(get(location(db('A3'), 'stopwatchGame/result')));
+  const oldGame = (await get(location(db('host'), 'stopwatchGame'))).val();
+  await update(location(db('host')), { presentation: { active: true, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() }, stopwatchGame: null });
+  await assertFails(set(location(db('host'), 'stopwatchGame'), oldGame));
+  await assertFails(submitStopwatch('B1'));
+});
+
 test('liar entry selects one per team atomically and excludes past entrants', async () => {
   await createLiarGame();
   const entries = await Promise.allSettled([enterLiar('A1'), enterLiar('A2')]);

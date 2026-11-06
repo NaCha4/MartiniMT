@@ -238,6 +238,46 @@ const liarGameRules = {
   },
   '$other': denyExtra,
 };
+const stopwatch = `${s}.child('stopwatchGame')`;
+const stopwatchScreen = view => STAGES.findIndex(stage => stage.game === 'stopwatch' && stage.view === view);
+const stopwatchNotUsed = Array.from({ length: 3 }, (_, index) => `${liar}.child('rounds/${index}/contestants').child($team).child('participantId').val() !== ${pid}`).join(' && ');
+const stopwatchEntry = `${stopwatch}.child('contestants').child($team)`;
+const stopwatchGameRules = {
+  '.read': controller, '.write': controller,
+  '.validate': `newData.hasChildren(['control','roster']) && newData.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+  control: {
+    '.read': gameReader, '.validate': "newData.hasChildren(['roundId','phase','updatedAt'])",
+    roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' }, updatedAt: storedTimestamp,
+    phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'running' || newData.val() === 'revealed'" },
+    '$other': denyExtra,
+  },
+  roster: { '$participant': { ...tasteGameRules('stopwatchGame', 0).roster.$participant, '.read': self } },
+  excluded: { '$participant': { '.read': self, '.validate': 'newData.val() === true' } },
+  contestants: {
+    '.read': gameReader,
+    '$team': {
+      '.write': `${member} && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${stopwatchScreen('select')} && ${stopwatch}.child('control/phase').val() === 'selecting' && ${stopwatch}.child('roster').child(${pid}).child('team').val() === $team && newData.child('participantId').val() === ${pid} && !${stopwatch}.child('excluded').child(${pid}).exists() && (${stopwatchNotUsed})`,
+      '.validate': `($team === 'A' || $team === 'B' || $team === 'C' || $team === 'D') && newData.hasChildren(['participantId','name','team','teamName','roundId','selectedAt']) && newData.child('roundId').val() === ${stopwatch}.child('control/roundId').val() && newData.child('team').val() === $team && newData.child('name').val() === ${stopwatch}.child('roster').child(newData.child('participantId').val()).child('name').val() && newData.child('team').val() === ${stopwatch}.child('roster').child(newData.child('participantId').val()).child('team').val() && newData.child('teamName').val() === ${stopwatch}.child('roster').child(newData.child('participantId').val()).child('teamName').val()`,
+      participantId: text(2), name: text(24), team, teamName: text(20), roundId: text(20), selectedAt: storedTimestamp, '$other': denyExtra,
+    },
+  },
+  submissions: {
+    '$team': {
+      '.read': `${member} && ${stopwatchEntry}.child('participantId').val() === ${pid}`,
+      '.write': `${member} && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${stopwatchScreen('play')} && ${stopwatch}.child('control/phase').val() === 'running' && ${stopwatchEntry}.child('participantId').val() === ${pid} && newData.child('participantId').val() === ${pid}`,
+      '.validate': `newData.hasChildren(['participantId','roundId','elapsedMs','submittedAt']) && newData.child('roundId').val() === ${stopwatch}.child('control/roundId').val()`,
+      participantId: text(2), roundId: text(20),
+      elapsedMs: { '.validate': 'newData.isNumber() && newData.val() >= 1000 && newData.val() <= 86400000 && newData.val() % 1 === 0' },
+      submittedAt: { '.read': gameReader, ...storedTimestamp }, '$other': denyExtra,
+    },
+  },
+  result: {
+    '.read': gameReader, '.validate': `newData.hasChildren(['elapsedMs','points','revealedAt']) && newData.parent().child('control/phase').val() === 'revealed'`,
+    elapsedMs: { '$team': { '.validate': `newData.isNumber() && newData.val() === newData.parent().parent().parent().child('submissions').child($team).child('elapsedMs').val()` } },
+    points: scoreMap, revealedAt: storedTimestamp, '$other': denyExtra,
+  },
+  '$other': denyExtra,
+};
 const session = {
   '.read': owner,
   '.write': "auth != null && !data.exists() && newData.child('meta/ownerUid').val() === auth.uid && $session.matches(/^[A-Za-z0-9_-]{20}$/)",
@@ -355,6 +395,7 @@ const session = {
   sojuGame: tasteGameRules('sojuGame', 6),
   militaryGame: tasteGameRules('militaryGame', 9),
   liarGame: liarGameRules,
+  stopwatchGame: stopwatchGameRules,
   oxQuestions: { '.read': controller, '.write': controller, ...oxQuestions },
   oxGame: oxGameRules,
   zoomQuestions: { '.read': controller, '.write': controller, ...zoomQuestions },

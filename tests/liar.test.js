@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { STAGES, TEAM_IDS, stageIndex } from '../src/event-model.js';
 import { LIAR_REVEAL_DURATION, liarRosterReady, liarUsedIds, liarOutcome, liarTally, liarRevealFinished } from '../src/liar-model.js';
 import { LIAR_PROMPTS } from '../src/liar-prompts.js';
-import { liarPresentation, liarParticipant } from '../src/liar-view.js';
+import { liarControls, liarPresentation, liarParticipant } from '../src/liar-view.js';
 import { scoreAward } from '../src/taste-model.js';
 
 const contestants = Object.fromEntries(TEAM_IDS.map(team => [team, { participantId: `${team}1`, team, teamName: `${team}조`, name: `${team}선수` }]));
@@ -57,12 +57,31 @@ test('vote totals show before the liar identity and the animation resumes from i
   assert.ok(revealed.includes('--liar-reveal-delay:-500ms'));
 });
 
-test('liar keeps prior entrants ineligible and requires three members per team', () => {
+test('liar keeps prior entrants ineligible and accepts any nonempty roster', () => {
   assert.deepEqual([...liarUsedIds({ rounds: { 0: { contestants } } })], ['A1', 'B1', 'C1', 'D1']);
   const roster = Object.fromEntries(TEAM_IDS.flatMap(team => Array.from({ length: 3 }, (_, i) => [`${team}${i + 1}`, { team }])));
   assert.equal(liarRosterReady(roster), true);
-  delete roster.A3;
-  assert.equal(liarRosterReady(roster), false);
+  assert.equal(liarRosterReady({ A1: roster.A1 }), true);
+  assert.equal(liarRosterReady({}), false);
+});
+
+test('one to three entrants have matching vote options, counts and safe reveal placeholders', () => {
+  for (const count of [1, 2, 3]) {
+    const partial = Object.fromEntries(Object.entries(contestants).slice(0, count));
+    const round = { contestants: partial, votes: { D6: { participantId: 'A1' } } };
+    const roster = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [i, {}]));
+    const game = { roster, control: { phase: 'voting', questionIndex: 0 }, rounds: { 0: round } };
+    const slide = { game: 'liar', view: 'play', questionIndex: 0 };
+    assert.ok(liarControls(game, slide, false, roster).includes(`1 / ${8 - count}명 투표`));
+    const participant = liarParticipant({ game, round, slide, participant: { team: 'D' }, participantId: 'D6', ready: true });
+    assert.equal((participant.match(/data-liar-vote=/g) ?? []).length, count);
+    round.result = liarOutcome(round, 'A1');
+    round.result.revealedAt = 1000;
+    assert.deepEqual(round.result.points, { A: 0, B: 50, C: 50, D: 50 });
+    const presentation = liarPresentation(game, slide, 1000);
+    assert.equal((presentation.match(/data-liar-candidate=/g) ?? []).length, count);
+    assert.equal((presentation.match(/미출전/g) ?? []).length, 4 - count);
+  }
 });
 
 test('presenter and spectators never receive the private word in rendered markup', () => {

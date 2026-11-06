@@ -2,18 +2,18 @@ import { TEAM_IDS, TEAM_NAMES, escapeHtml as escape } from './event-model.js';
 import { liarUsedIds, liarRosterReady } from './liar-model.js';
 
 export function liarControls(game, slide, disabled, roster) {
-  if (slide.view === 'intro') return `<section class="remote-game-controls"><p>${liarRosterReady(roster) ? '각 조 1명 · 매 라운드 다른 팀원 출전 · 총 3라운드' : '중복 없이 3회 출전하려면 각 조에 3명 이상 필요합니다.'}</p></section>`;
+  if (slide.view === 'intro') return `<section class="remote-game-controls"><p>${liarRosterReady(roster) ? '한 명 이상 출전하면 진행 · 각 조 최대 1명 · 총 3라운드' : '참가자를 먼저 등록해주세요.'}</p></section>`;
   const round = game.rounds?.[slide.questionIndex];
-  if (slide.view === 'select') return `<section class="remote-game-controls"><p>${Object.keys(round?.contestants ?? {}).length} / 4개 조 출전 확정</p><p>참가자가 휴대폰에서 출전을 확인하면 이름이 표시됩니다.</p></section>`;
+  if (slide.view === 'select') return `<section class="remote-game-controls"><p>${Object.keys(round?.contestants ?? {}).length}명 출전 확정</p><p>한 명 이상 출전하면 다음 화면으로 진행할 수 있습니다.</p></section>`;
   if (slide.view === 'score' || !round) return '';
   const phase = game.control?.questionIndex === slide.questionIndex ? game.control.phase : 'finished';
   const actions = { selecting: ['단어 전달', 'liar-deal'], describing: ['투표', 'liar-vote'], voting: ['투표 종료', 'liar-finish'], closed: ['정답 공개', 'liar-reveal'] };
   const action = actions[phase];
-  return `<section class="remote-game-controls">${action ? `<button class="button dark" data-action="${action[1]}" ${disabled ? 'disabled' : ''}>${action[0]}</button>` : ''}<p>${phase === 'voting' ? `${Object.keys(round.votes ?? {}).length} / ${Object.keys(game.roster ?? {}).length - 4}명 투표` : phase === 'describing' ? '단어 전달 완료 · 돌아가며 묘사를 진행해주세요.' : ''}</p></section>`;
+  return `<section class="remote-game-controls">${action ? `<button class="button dark" data-action="${action[1]}" ${disabled ? 'disabled' : ''}>${action[0]}</button>` : ''}<p>${phase === 'voting' ? `${Object.keys(round.votes ?? {}).length} / ${Object.keys(game.roster ?? {}).length - Object.keys(round.contestants ?? {}).length}명 투표` : phase === 'describing' ? '단어 전달 완료 · 돌아가며 묘사를 진행해주세요.' : ''}</p></section>`;
 }
 
 export function liarPresentation(game, slide, now = Date.now()) {
-  if (slide.view === 'intro') return `<section class="taste-screen liar-intro"><span class="taste-eyebrow">RECREATION 04</span><h1>라이어게임</h1><div class="liar-rules"><p>각 조에서 새로운 팀원 <b>1명씩 출전</b></p><p>4명 중 1명에게는 단어가 전달되지 않습니다.</p><p>비출전자 투표로 라이어를 찾아주세요.</p><p>적발 성공 <b>나머지 세 팀 +50점</b> · 라이어 생존 <b>라이어 팀 +150점</b></p></div></section>`;
+  if (slide.view === 'intro') return `<section class="taste-screen liar-intro"><span class="taste-eyebrow">RECREATION 04</span><h1>라이어게임</h1><div class="liar-rules"><p>각 조에서 새로운 팀원 <b>최대 1명씩 출전</b></p><p>한 명 이상 출전하면 진행할 수 있습니다.</p><p>출전자 중 1명에게는 단어가 전달되지 않습니다.</p><p>비출전자 투표로 라이어를 찾아주세요.</p><p>적발 성공 <b>나머지 세 팀 +50점</b> · 라이어 생존 <b>라이어 팀 +150점</b></p></div></section>`;
   const round = game.rounds?.[slide.questionIndex];
   const phase = game.control?.questionIndex === slide.questionIndex ? game.control.phase : 'finished';
   if (slide.view === 'play' && (round?.tally || round?.result)) {
@@ -24,6 +24,7 @@ export function liarPresentation(game, slide, now = Date.now()) {
       <header class="liar-heading"><span>LIAR GAME</span><span>${slide.questionIndex + 1} / 3</span></header><h1>투표 결과</h1>
       <div class="liar-contestants">${TEAM_IDS.map(team => {
         const person = round.contestants[team];
+        if (!person) return `<article class="liar-contestant is-empty" data-team="${team}"><span>${TEAM_NAMES[team]}</span><strong>미출전</strong></article>`;
         const isLiar = round.result?.liarId === person.participantId;
         const count = tally.counts[person.participantId] ?? 0;
         return `<article class="liar-contestant ${isLiar ? 'is-liar' : round.result ? 'is-other' : ''}" data-team="${team}" data-liar-candidate="${person.participantId}">${isLiar ? '<b class="liar-badge">라이어</b>' : ''}<span>${TEAM_NAMES[team]}</span><strong>${escape(person.name)}</strong><div class="liar-vote-bar"><i style="width:${count / maximum * 100}%"></i></div><b class="liar-vote-count">${count}<small>표</small></b></article>`;
@@ -33,7 +34,7 @@ export function liarPresentation(game, slide, now = Date.now()) {
     <h1>${slide.view === 'select' ? '출전자를 기다립니다' : escape(round?.topic ?? '')}</h1>
     <div class="liar-contestants">${TEAM_IDS.map(team => {
       const person = round?.contestants?.[team];
-      return `<article class="liar-contestant" data-team="${team}"><span>${TEAM_NAMES[team]}</span><strong>${person ? escape(person.name) : '출전 대기'}</strong></article>`;
+      return `<article class="liar-contestant ${!person && slide.view !== 'select' ? 'is-empty' : ''}" data-team="${team}"><span>${TEAM_NAMES[team]}</span><strong>${person ? escape(person.name) : slide.view === 'select' ? '출전 대기' : '미출전'}</strong></article>`;
     }).join('')}</div><p class="liar-status">${slide.view === 'select' ? '휴대폰을 누르고 출전을 확인해주세요' : phase === 'selecting' ? '단어 전달을 기다려주세요' : phase === 'describing' ? '차례대로 주어진 단어를 묘사해주세요' : phase === 'voting' ? '출전자를 제외한 모두가 라이어에게 투표해주세요' : '투표가 종료되었습니다'}</p></section>`;
 }
 

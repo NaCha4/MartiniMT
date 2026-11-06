@@ -12,6 +12,8 @@ import { zoomEditor, zoomPresentation, zoomControls, zoomParticipant } from './z
 import { bindZoomEditor } from './zoom-editor.js';
 import { LIAR_REVEAL_DURATION, liarRosterReady, liarUsedIds, liarRevealFinished } from './liar-model.js';
 import { liarControls, liarPresentation, liarParticipant, liarResultCaption } from './liar-view.js';
+import { createStopwatchClock, STOPWATCH_MIN_MS } from './stopwatch-model.js';
+import { stopwatchControls, stopwatchPresentation, stopwatchParticipant } from './stopwatch-view.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
@@ -71,7 +73,13 @@ const state = {
   oxGame: {}, oxRound: {}, oxReady: false, oxQuestions: null, oxDraft: null,
   zoomGame: {}, zoomRound: {}, zoomReady: false, zoomQuestions: null, zoomDraft: null,
   liarGame: {}, liarRound: {}, liarReady: false, liarConfirm: false,
+  stopwatchGame: {}, stopwatchReady: false, stopwatchConfirm: false,
 };
+let stopwatchStorage;
+try { stopwatchStorage = window.sessionStorage; } catch { /* Timing can continue in memory. */ }
+const stopwatchClock = createStopwatchClock({ storage: stopwatchStorage });
+let stopwatchTimer;
+const stopwatchKey = () => `martini.stopwatch.${state.room}.${state.participantId}.${state.stopwatchGame.control?.roundId}`;
 let presenceClose, presenceEpoch = 0, frame, composing = false;
 let rosterSaveTimer, rosterSavePromise;
 let managerSaveTimer, managerSavePromise;
@@ -90,7 +98,8 @@ const input = createInputController({
   document, window,
   getContext: () => ({ interactive: interactionLocked(), participant: state.role === 'participant', voteKey: currentVoteKey() }),
   submitVote: (kind, value) => {
-    if (kind === 'liar-action') void action(value);
+    if (kind === 'stopwatch-action') void stopwatchAction(value);
+    else if (kind === 'liar-action') void action(value);
     else if (kind === 'zoom') void requestZoomAnswer();
     else if (kind === 'liar') void voteLiar(value);
     else if (kind === 'ox') void voteOx(value);
@@ -223,14 +232,19 @@ function errorBanner() {
 function tasteContext(index = state.presentation?.slideIndex ?? state.slideIndex) {
   const slide = STAGES[index];
   const key = slide?.game ?? 'whisky';
-  return { key, slide, game: key === 'ox' ? state.oxGame : key === 'zoom' ? state.zoomGame : key === 'liar' ? state.liarGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
+  return { key, slide, game: key === 'ox' ? state.oxGame : key === 'zoom' ? state.zoomGame : key === 'liar' ? state.liarGame : key === 'stopwatch' ? state.stopwatchGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
 }
 function nextBlocked() {
   const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.game === 'stopwatch') {
+    if (slide.view === 'select') return !Object.keys(game.contestants ?? {}).length;
+    if (slide.view === 'play') return !game.result;
+    return stageIndex(state.slideIndex, 1) === state.slideIndex;
+  }
   if (slide.game === 'liar') {
     const round = game.rounds?.[slide.questionIndex];
     if (slide.view === 'intro') return !liarRosterReady(game.roster ?? state.participants);
-    if (slide.view === 'select') return TEAM_IDS.some(team => !round?.contestants?.[team]);
+    if (slide.view === 'select') return !Object.keys(round?.contestants ?? {}).length;
     if (slide.view === 'play') return !liarRevealFinished(round, Date.now() + state.serverOffset);
     return stageIndex(state.slideIndex, 1) === state.slideIndex;
   }
@@ -252,6 +266,7 @@ function nextBlocked() {
 
 function tasteControls(disabled) {
   const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.game === 'stopwatch') return stopwatchControls(game, slide, disabled);
   if (slide.game === 'liar') return liarControls(game, slide, disabled, state.participants);
   if (slide.game === 'zoom') return zoomControls(game, slide, disabled);
   if (slide.game === 'ox') return oxControls(slide, disabled);
@@ -464,7 +479,8 @@ function presentationView() {
   if (slide.id === 'join') {
     content = joinNetworkView();
   } else if (state.slideIndex >= 2) {
-    if (slide.game === 'liar') content = slide.view === 'score' ? scorePresentation(state.liarGame.rounds?.[slide.questionIndex]?.roundId, liarResultCaption(state.liarGame, slide.questionIndex)) : liarPresentation(state.liarGame, slide, Date.now() + state.serverOffset);
+    if (slide.game === 'stopwatch') content = slide.view === 'score' ? scorePresentation(state.stopwatchGame.control?.roundId, '<header class="liar-result"><h1>인간스톱워치 점수</h1><p>10초에 가장 가까운 팀 +100점 · 동률 모두 +100점</p></header>') : stopwatchPresentation(state.stopwatchGame, slide);
+    else if (slide.game === 'liar') content = slide.view === 'score' ? scorePresentation(state.liarGame.rounds?.[slide.questionIndex]?.roundId, liarResultCaption(state.liarGame, slide.questionIndex)) : liarPresentation(state.liarGame, slide, Date.now() + state.serverOffset);
     else if (slide.game === 'zoom') content = slide.view === 'score' ? scorePresentation(state.zoomGame.control?.roundId) : zoomPresentation(state.zoomGame, state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, slide, Date.now() + state.serverOffset);
     else content = slide.game === 'ox' ? oxPresentation(slide) : tastePresentation(slide);
   } else {
@@ -514,6 +530,13 @@ function participantView() {
   if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>참가자 입장</h1><p>등록된 이름을 입력하세요.</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${TEAM_NAMES[id[0]]} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
   if (state.presentation?.active && state.presentation.slideIndex >= 2) {
     const slide = STAGES[state.presentation.slideIndex];
+    if (slide.game === 'stopwatch') {
+      const attempt = stopwatchClock.read(stopwatchKey());
+      const remaining = STOPWATCH_MIN_MS - stopwatchClock.elapsed(stopwatchKey());
+      clearTimeout(stopwatchTimer);
+      if (attempt && attempt.elapsedMs === null && remaining > 0) stopwatchTimer = setTimeout(schedule, Math.ceil(remaining) + 1);
+      return stopwatchParticipant({ game: state.stopwatchGame, slide, participant: state.participant, participantId: state.participantId, ready: state.stopwatchReady, disabled: state.busy || state.voting || (!state.online && !attempt) || state.controlsLocked, confirming: state.stopwatchConfirm, attempt, canStop: remaining <= 0, error: errorBanner() });
+    }
     if (slide.game === 'liar') return liarParticipant({ game: state.liarGame, round: state.liarRound, slide, participant: state.participant, participantId: state.participantId, ready: state.liarReady, disabled: state.busy || state.voting || !state.online || state.controlsLocked, confirming: state.liarConfirm, error: errorBanner() });
     if (slide.game === 'zoom') return zoomParticipant({ game: state.zoomGame, round: state.zoomRound, ready: state.zoomReady, participant: state.participant, participantId: state.participantId, questionIndex: slide.questionIndex, disabled: state.voting || !state.online || state.controlsLocked, error: errorBanner() });
     return slide.game === 'ox' ? participantOxView() : participantTasteView();
@@ -628,7 +651,10 @@ async function moveTo(index, { skipGame = false } = {}) {
     chooseWinner();
   } else {
     const { key, slide } = tasteContext(index);
-    if (key === 'liar') {
+    if (key === 'stopwatch') {
+      if (slide.view === 'select') state.stopwatchGame = await api.prepareStopwatch(state.room, state.participants, resetAt);
+      if (slide.view === 'score') state.teamScores = await api.awardStopwatchPoints(state.room);
+    } else if (key === 'liar') {
       if (slide.view === 'select') state.liarGame = await api.prepareLiarRound(state.room, state.participants, slide.questionIndex, resetAt);
       if (slide.view === 'score') state.teamScores = await api.awardLiarPoints(state.room, slide.questionIndex, Date.now() + state.serverOffset);
     } else if (key === 'zoom') {
@@ -903,6 +929,12 @@ async function action(name, errorId) {
       await api.claimLiarEntry(state.room, state.participantId, slide.questionIndex, game.control.roundId);
       state.liarConfirm = false;
     }
+    if (['stopwatch-start', 'stopwatch-reveal'].includes(name)) {
+      const resetAt = state.presentation?.resetAt;
+      const game = await api.changeStopwatchPhase(state.room, state.stopwatchGame.control?.roundId, name);
+      if (state.presentation?.resetAt !== resetAt) return;
+      state.stopwatchGame = game;
+    }
     if (['liar-deal', 'liar-vote', 'liar-finish', 'liar-reveal'].includes(name)) {
       const slide = STAGES[state.slideIndex];
       const resetAt = state.presentation?.resetAt;
@@ -926,9 +958,40 @@ async function action(name, errorId) {
   finally { state.busy = false; schedule(); }
 }
 
+async function stopwatchAction(name) {
+  const { slide, game } = tasteContext();
+  if (slide?.game !== 'stopwatch' || !state.stopwatchReady || !state.participant || state.busy || state.voting || state.controlsLocked || document.hidden) return;
+  if (name === 'stopwatch-cancel') { state.stopwatchConfirm = false; schedule(); return; }
+  if (name === 'stopwatch-volunteer') { state.stopwatchConfirm = true; schedule(); return; }
+  const key = stopwatchKey();
+  const ownEntry = game.contestants?.[state.participant.team]?.participantId === state.participantId;
+  if (name === 'stopwatch-count-start' && slide.view === 'play' && ownEntry && game.control?.phase === 'running' && !game.submissions?.[state.participant.team]) {
+    stopwatchClock.start(key);
+    schedule();
+    return;
+  }
+  let elapsedMs;
+  try {
+    if (['stopwatch-count-stop', 'stopwatch-submit'].includes(name)) {
+      if (slide.view !== 'play' || !ownEntry || game.control?.phase !== 'running' || game.submissions?.[state.participant.team]) return;
+      // Capture the local duration synchronously, before any network request or redraw.
+      elapsedMs = stopwatchClock.stop(key);
+    }
+    state.voting = true;
+    schedule();
+    if (name === 'stopwatch-confirm' && slide.view === 'select' && game.control?.phase === 'selecting') {
+      if (game.excluded?.[state.participantId]) throw { userMessage: '라이어게임 출전자는 참여할 수 없습니다.' };
+      await api.claimStopwatchEntry(state.room, state.participantId, game.control.roundId);
+      state.stopwatchConfirm = false;
+    }
+    if (elapsedMs !== undefined) await api.submitStopwatch(state.room, state.participantId, state.participant.team, game.control.roundId, elapsedMs);
+  } catch (error) { showError(error); }
+  finally { state.voting = false; schedule(); }
+}
+
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
-  for (const control of document.querySelectorAll('[data-vote], [data-ox-vote], [data-zoom-request], [data-liar-vote], [data-liar-action]')) {
+  for (const control of document.querySelectorAll('[data-vote], [data-ox-vote], [data-zoom-request], [data-liar-vote], [data-liar-action], [data-stopwatch-action]')) {
     input.bindVote(control);
   }
   document.querySelectorAll('[data-zoom-action]').forEach(control => {
@@ -1041,6 +1104,7 @@ function attachParticipant(id) {
   state.oxGame = {}; state.oxRound = {}; state.oxReady = false;
   state.zoomGame = {}; state.zoomRound = {}; state.zoomReady = false;
   state.liarGame = {}; state.liarRound = {}; state.liarReady = false; state.liarConfirm = false;
+  state.stopwatchGame = {}; state.stopwatchReady = false; state.stopwatchConfirm = false;
   if (!id) { watchActiveGame(); presenceEpoch++; presenceClose?.().catch(() => {}); presenceClose = null; state.participant = null; state.instruction = null; state.response = null; schedule(); return; }
   participantSubscriptions.watch(`participants/${id}`, person => { state.participant = person; void syncPresence(); schedule(); }, showError);
   participantSubscriptions.watch(`instructions/${id}`, instruction => { state.instruction = instruction; schedule(); }, showError);
@@ -1056,6 +1120,19 @@ function watchActiveGame() {
   gameSubscriptions.clear(); gameWatchKey = null;
   if (!state.uid || !state.room || (state.role === 'participant' && !state.participantId)) return;
   gameWatchKey = watchKey;
+  if (key === 'stopwatch') {
+    if (state.role === 'participant') {
+      const game = { submissions: {} };
+      state.stopwatchGame = game; state.stopwatchReady = false;
+      const ready = new Set();
+      const received = field => { ready.add(field); state.stopwatchReady = ready.size === 5; schedule(); };
+      for (const field of ['control', 'contestants', 'result']) gameSubscriptions.watch(`stopwatchGame/${field}`, value => { game[field] = value; received(field); }, showError);
+      gameSubscriptions.watch(`stopwatchGame/excluded/${state.participantId}`, value => { game.excluded = { [state.participantId]: value }; received('excluded'); }, showError);
+      const team = state.participantId[0];
+      gameSubscriptions.watch(`stopwatchGame/submissions/${team}/submittedAt`, value => { game.submissions[team] = value ? { submittedAt: value } : null; received('submission'); }, showError);
+    } else gameSubscriptions.watch('stopwatchGame', value => { state.stopwatchGame = value ?? {}; schedule(); }, showGameError);
+    return;
+  }
   if (key === 'liar') {
     if (state.role === 'participant') {
       const game = { rounds: {} }, round = {};
@@ -1123,6 +1200,7 @@ function syncPresentation(presentation) {
     state.oxGame = {}; state.oxRound = {}; state.oxReady = false;
     state.zoomGame = {}; state.zoomRound = {}; state.zoomReady = false; zoomRetryAt = 0;
     state.liarGame = {}; state.liarRound = {}; state.liarReady = false; state.liarConfirm = false;
+    state.stopwatchGame = {}; state.stopwatchReady = false; state.stopwatchConfirm = false;
     state.teamScores = null;
     gameWatchKey = null;
     state.operatorError = null;
@@ -1130,7 +1208,7 @@ function syncPresentation(presentation) {
     state.gameError = '';
     scriptPosition = null;
   }
-  if (presentation?.slideIndex !== state.presentation?.slideIndex) state.liarConfirm = false;
+  if (presentation?.slideIndex !== state.presentation?.slideIndex) { state.liarConfirm = false; state.stopwatchConfirm = false; }
   state.presentation = presentation;
   if (presentation && state.role !== 'participant') {
     if (STAGES[presentation.slideIndex]?.view === 'score' && state.slideIndex !== presentation.slideIndex) state.scoreEntryAt = performance.now();
