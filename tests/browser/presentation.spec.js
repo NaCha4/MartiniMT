@@ -1,6 +1,48 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
+test('the desktop setup shortcut exits restored yut fullscreen and preserves progress', async ({ browser }) => {
+  const desktop = await browser.newContext({ viewport: { width: 1440, height: 960 }, screen: { width: 1920, height: 1080 } });
+  const page = await desktop.newPage();
+  try {
+    await page.goto('/');
+    await page.locator('#name-A1').fill('설정복귀참가자');
+    await page.getByRole('button', { name: '발표 시작', exact: true }).click();
+    await expect(page.locator('.presentation')).toHaveAttribute('data-slide', 'join');
+    await expect(page.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
+    const before = await page.evaluate(async () => {
+      const api = await import('/src/event-data.js');
+      const { STAGES } = await import('/src/event-model.js');
+      const room = localStorage.getItem('martini.host-room');
+      const presentation = await api.read(room, 'presentation');
+      const game = await api.prepareYutGame(room, presentation.resetAt ?? null);
+      await api.moveYutToken(room, game.control.roundId, 'A1', { x: 500, y: 340 });
+      await api.finishYutGame(room, game.control.roundId, 'A');
+      await api.setPresentationSlide(room, STAGES.findIndex(stage => stage.id === 'yut-board'), presentation.resetAt ?? null);
+      return { game: await api.read(room, 'yutGame'), scores: await api.read(room, 'teamScores') };
+    });
+    await page.reload();
+    await expect(page.locator('.presentation')).toHaveAttribute('data-slide', 'yut-board');
+    await page.getByRole('button', { name: '전체화면', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+    await expect(page.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
+    await page.keyboard.press('Control+Shift+Home');
+    await expect(page.locator('.dashboard')).toBeVisible();
+    await expect(page.locator('#name-A1')).toHaveValue('설정복귀참가자');
+    const after = await page.evaluate(async () => {
+      const api = await import('/src/event-data.js');
+      const room = localStorage.getItem('martini.host-room');
+      return { game: await api.read(room, 'yutGame'), scores: await api.read(room, 'teamScores'), presentation: await api.read(room, 'presentation') };
+    });
+    expect(after.game).toEqual(before.game);
+    expect(after.scores).toEqual(before.scores);
+    expect(after.presentation.active).toBe(false);
+    await page.reload();
+    await expect(page.locator('.dashboard')).toBeVisible();
+    await expect(page.getByRole('button', { name: '초기화', exact: true })).toBeEnabled();
+  } finally { await desktop.close(); }
+});
+
 test('four-digit and larger cumulative scores stay on one line within their rows', async ({ page }) => {
   const styles = await readFile(new URL('../../src/event-style.css', import.meta.url), 'utf8');
   const tokens = await readFile(new URL('../../src/design-tokens.css', import.meta.url), 'utf8');

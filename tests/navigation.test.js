@@ -50,8 +50,8 @@ function presentation(slideIndex = 3) {
       await new Promise(resolve => setImmediate(resolve));
     },
     advance: (options) => context.advance(1, options),
-    async keydown(key) {
-      listeners.get('keydown')({ key, repeat: false, target: new Element(), preventDefault() {} });
+    async keydown(key, modifiers = {}) {
+      listeners.get('keydown')({ key, repeat: false, target: new Element(), preventDefault() {}, ...modifiers });
       await new Promise(resolve => setImmediate(resolve));
     },
     async rightClick() {
@@ -72,6 +72,33 @@ test('all presentation screens ignore host clicks, right-clicks, keys and direct
     await screen.advance();
     assert.equal(screen.state.slideIndex, index, stage.id);
     assert.deepEqual(screen.calls, [], stage.id);
+  }
+});
+
+test('the desktop setup shortcut exits from every presentation screen', async () => {
+  for (const [index, stage] of STAGES.entries()) {
+    const screen = presentation(index);
+    await screen.keydown('Home', { ctrlKey: true, shiftKey: true });
+    assert.deepEqual(screen.calls, [['action', 'exit']], stage.id);
+  }
+});
+
+test('the setup shortcut requires the exact combination and a presenting host', async () => {
+  for (const modifiers of [
+    {}, { ctrlKey: true }, { shiftKey: true },
+    { ctrlKey: true, shiftKey: true, altKey: true },
+    { ctrlKey: true, shiftKey: true, metaKey: true },
+    { ctrlKey: true, shiftKey: true, repeat: true },
+  ]) {
+    const screen = presentation();
+    await screen.keydown('Home', modifiers);
+    assert.deepEqual(screen.calls, []);
+  }
+  for (const state of [{ role: 'participant' }, { role: 'manager' }, { presenting: false }]) {
+    const screen = presentation();
+    Object.assign(screen.state, state);
+    await screen.keydown('Home', { ctrlKey: true, shiftKey: true });
+    assert.deepEqual(screen.calls, []);
   }
 });
 

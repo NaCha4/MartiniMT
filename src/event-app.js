@@ -1654,6 +1654,11 @@ document.addEventListener('contextmenu', event => {
 });
 document.addEventListener('keydown', event => {
   if (state.role !== 'host' || !state.presenting) return;
+  if (event.key === 'Home' && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
+    event.preventDefault();
+    if (!event.repeat) void action('exit');
+    return;
+  }
   if (['Escape', 'ArrowRight', 'ArrowLeft', 'PageUp', 'PageDown', ' '].includes(event.key)) event.preventDefault();
 });
 
