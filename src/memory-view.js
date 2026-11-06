@@ -1,5 +1,5 @@
 import { TEAM_IDS, TEAM_NAMES, escapeHtml as escape } from './event-model.js';
-import { MEMORY_PREVIEW_MS, MEMORY_MATCH_MS, MEMORY_MISS_MS, MEMORY_SYMBOLS, memoryPlayer, memoryCanFlip, memoryStandings, memoryLayouts } from './memory-model.js';
+import { MEMORY_PREVIEW_MS, MEMORY_FLIP_MS, MEMORY_MATCH_MS, MEMORY_MISS_MS, MEMORY_SYMBOLS, memoryPlayer, memoryCanFlip, memoryStandings, memoryLayouts } from './memory-model.js';
 
 export function memoryControls(game, slide, disabled) {
   const count = Object.keys(game.contestants ?? {}).length;
@@ -18,9 +18,12 @@ function memoryBoard(player, { playing = false, disabled = true, now }) {
     const removed = player.matched.includes(index) || player.finishedAt !== null;
     const matching = player.pairMatches && player.faceUp.includes(index);
     const missing = player.faceUp.length === 2 && !player.pairMatches && player.faceUp.includes(index);
-    const delay = up && !preview ? flip.upAt - now : flip?.downAt != null ? flip.downAt - now : player.roundStartedAt + MEMORY_PREVIEW_MS - now;
+    const flipAt = up ? flip?.upAt : flip?.downAt ?? player.roundStartedAt + MEMORY_PREVIEW_MS;
+    const duration = up ? MEMORY_FLIP_MS : 200;
+    const flipping = started && !preview && now >= flipAt && now < flipAt + duration;
+    const flipClass = flipping ? up ? 'is-up' : 'is-down' : '';
     const pairDelay = player.resolveAt - (matching ? MEMORY_MATCH_MS : MEMORY_MISS_MS) - now;
-    return `<button class="memory-card ${started ? up && !preview ? 'is-up' : 'is-down' : ''} ${removed ? 'is-removed' : ''} ${matching ? 'is-matching' : ''} ${missing ? 'is-missing' : ''}" ${playing ? `data-memory-card="${index}"` : 'tabindex="-1"'} aria-label="카드 ${index + 1}${up ? ` ${MEMORY_SYMBOLS[symbol]}` : ''}" ${disabled || !playing || !memoryCanFlip(player, index, now) ? 'disabled' : ''} style="--memory-flip-delay:${Number.isFinite(delay) ? delay : 0}ms;--memory-pair-delay:${pairDelay}ms"><span class="memory-card-rotor"><span class="memory-card-front">${MEMORY_SYMBOLS[symbol]}</span><span class="memory-card-back">M<span>MEMORY</span></span></span></button>`;
+    return `<button class="memory-card ${up ? 'is-front' : ''} ${flipClass} ${removed ? 'is-removed' : ''} ${matching ? 'is-matching' : ''} ${missing ? 'is-missing' : ''}" ${playing ? `data-memory-card="${index}"` : 'tabindex="-1"'} aria-label="카드 ${index + 1}${up ? ` ${MEMORY_SYMBOLS[symbol]}` : ''}" ${disabled || !playing || !memoryCanFlip(player, index, now) ? 'disabled' : ''} style="--memory-flip-delay:${flipping ? flipAt - now : 0}ms;--memory-flip-duration:${duration}ms;--memory-pair-delay:${pairDelay}ms"><span class="memory-card-rotor"><span class="memory-card-front">${MEMORY_SYMBOLS[symbol]}</span><span class="memory-card-back">M<span>MEMORY</span></span></span></button>`;
   }).join('')}</div>`;
 }
 

@@ -53,6 +53,20 @@ test('memory preview, turn animation and mismatch lock reject premature or dupli
   assert.deepEqual(memoryPlayer(events, startedAt, hiddenAt).faceUp, [], 'cannot skip directly to a later round');
 });
 
+test('card faces use explicit settled states and animate only during an active flip', () => {
+  const game = { control: { phase: 'running', startedAt: 1000, layoutVersion: 2 }, contestants: { A: { participantId: 'A4' } }, events: { A: {} } };
+  const render = now => memoryParticipant({ game, slide: { view: 'play' }, participant: { team: 'A' }, participantId: 'A4', ready: true, now });
+  assert.equal((render(2000).match(/memory-card is-front/g) ?? []).length, 12);
+  assert.doesNotMatch(render(2000), /is-up|is-down/);
+  assert.equal((render(4010).match(/is-down/g) ?? []).length, 12);
+  assert.doesNotMatch(render(4300), /is-front|is-up|is-down/);
+  game.events.A[0] = { sequence: 0, roundIndex: 0, cardIndex: 0, at: 4400 };
+  assert.match(render(4420), /memory-card is-front is-up/);
+  assert.match(render(4420), /--memory-flip-delay:-20ms/);
+  assert.equal((render(4700).match(/memory-card is-front/g) ?? []).length, 1);
+  assert.doesNotMatch(render(4700), /is-up|is-down/);
+});
+
 test('memory replays logs, removes pairs, advances rounds and ranks the three fastest finishers', () => {
   const startedAt = 1000, game = { control: { startedAt, layoutVersion: 2 }, contestants: {}, events: {} };
   for (const [index, team] of ['A', 'B', 'C', 'D'].entries()) {

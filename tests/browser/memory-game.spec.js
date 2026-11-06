@@ -1,5 +1,62 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { MEMORY_LAYOUTS } from '../../src/memory-model.js';
+import { memoryParticipant } from '../../src/memory-view.js';
+
+test('card faces stay stable when boards redraw and flip without 3D layers', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const page = await context.newPage();
+  const tokens = await readFile(new URL('../../src/design-tokens.css', import.meta.url), 'utf8');
+  const styles = (await readFile(new URL('../../src/event-style.css', import.meta.url), 'utf8')).replace(/^@import[^;]+;/, '');
+  const game = { control: { phase: 'running', startedAt: 1000, layoutVersion: 2 }, contestants: { A: { participantId: 'A4' } }, events: { A: {} } };
+  async function draw(now) {
+    const html = memoryParticipant({ game, slide: { view: 'play' }, participant: { team: 'A' }, participantId: 'A4', ready: true, now });
+    await page.setContent(`<style>${tokens}\n${styles}</style><body class="is-participant is-controller"><div id="app">${html}</div></body>`);
+  }
+  const card = () => page.locator('[data-memory-card="0"]');
+  async function animationTime(time) {
+    await page.evaluate(time => {
+      for (const animation of document.getAnimations()) { animation.pause(); animation.currentTime = time; }
+    }, time);
+  }
+  try {
+    await draw(2000);
+    await expect(card().locator('.memory-card-front')).toHaveCSS('opacity', '1');
+    await expect(card().locator('.memory-card-back')).toHaveCSS('opacity', '0');
+    await expect(card().locator('.memory-card-rotor')).toHaveCSS('animation-name', 'none');
+    await draw(4300);
+    await expect(card().locator('.memory-card-front')).toHaveCSS('opacity', '0');
+    await expect(card().locator('.memory-card-back')).toHaveCSS('opacity', '1');
+    game.events.A[0] = { sequence: 0, roundIndex: 0, cardIndex: 0, at: 4400 };
+    await draw(4420);
+    await animationTime(0);
+    await expect(card().locator('.memory-card-front')).toHaveCSS('opacity', '0');
+    await expect(card().locator('.memory-card-back')).toHaveCSS('opacity', '1');
+    await expect(card().locator('.memory-card-rotor')).toHaveCSS('animation-name', 'memory-turn');
+    await animationTime(110);
+    await expect(card().locator('.memory-card-front')).toHaveCSS('opacity', '1');
+    await expect(card().locator('.memory-card-back')).toHaveCSS('opacity', '0');
+    for (const now of [4700, 4800, 4900]) {
+      await draw(now);
+      await expect(card().locator('.memory-card-front')).toHaveCSS('opacity', '1');
+      await expect(card().locator('.memory-card-rotor')).toHaveCSS('animation-name', 'none');
+    }
+    game.events.A[1] = { sequence: 1, roundIndex: 0, cardIndex: 1, at: 4600 };
+    await draw(5460);
+    await animationTime(0);
+    await expect(card().locator('.memory-card-front')).toHaveCSS('opacity', '1');
+    await animationTime(120);
+    await expect(card().locator('.memory-card-front')).toHaveCSS('opacity', '0');
+    await expect(card().locator('.memory-card-back')).toHaveCSS('opacity', '1');
+    await draw(5700);
+    await expect(card().locator('.memory-card-rotor')).toHaveCSS('transform', 'none');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    game.events.A = { 0: { sequence: 0, roundIndex: 0, cardIndex: 0, at: 4400 } };
+    await draw(4420);
+    await expect(card().locator('.memory-card-front')).toHaveCSS('opacity', '1');
+    await expect(card().locator('.memory-card-back')).toHaveCSS('opacity', '0');
+  } finally { await context.close(); }
+});
 
 test('four players replay flip logs, progress through 12/14/16 cards and score in finish order', async ({ browser }) => {
   test.setTimeout(180000);
