@@ -58,17 +58,19 @@ const local = {
   set(key, value) { try { localStorage.setItem(key, value); return true; } catch { return false; } },
 };
 const queryRoom = new URLSearchParams(location.search).get('room');
-const rosterStorageKey = api.emulator ? 'martini.host-roster.emulator' : 'martini.host-roster';
-const managerStorageKey = api.emulator ? 'martini.manager-name.emulator' : 'martini.manager-name';
+const managementEntry = !queryRoom;
+const storageScope = api.fixedRoom ? `.${api.fixedRoom}${api.emulator ? '.emulator' : ''}` : api.emulator ? '.emulator' : '';
+const rosterStorageKey = `martini.host-roster${storageScope}`;
+const managerStorageKey = `martini.manager-name${storageScope}`;
 let cachedRoster = queryRoom ? null : readRosterDraft(local.get(rosterStorageKey));
-const localRoster = !queryRoom && !api.emulator && !cachedRoster
+const localRoster = !queryRoom && !api.emulator && !api.fixedRoom && !cachedRoster
   ? readRosterDraft(local.get('martini.host-roster.emulator')) : null;
 const state = {
-  role: queryRoom ? 'participant' : 'host', room: queryRoom, uid: null, online: false, ready: false,
+  role: queryRoom || api.fixedRoom ? 'participant' : 'host', room: api.fixedRoom ?? queryRoom, uid: null, online: false, ready: false,
   error: '', presenting: false, slideIndex: 0, busy: false, controlsLocked: false, dirty: cachedRoster?.pending ?? false, draftSaved: Boolean(cachedRoster),
   savingRoster: false, rosterError: '',
   managerName: queryRoom ? '' : local.get(managerStorageKey) ?? '', managerDirty: !queryRoom && local.get(`${managerStorageKey}.pending`) === 'true', managerSaving: false, managerError: '',
-  managerBinding: null, presentation: null, finalizingWinner: false, operatorError: null,
+  managerBinding: null, managerDevices: {}, presentation: null, finalizingWinner: false, operatorError: null,
   meta: null, stage: { step: 'setup' }, participants: {}, bindings: {}, presence: {}, responses: {},
   rows: cachedRoster?.rows ?? localRoster?.rows ?? rowsFromParticipants(),
   participantId: null, participant: null, instruction: null, response: null, responseReady: false, choices: null, name: '',
@@ -189,6 +191,7 @@ function flushRoster() {
 function managerStatus() {
   if (state.managerError) return state.managerError;
   if (state.managerSaving || state.managerDirty) return '관리자 이름 저장 중…';
+  if (api.fixedRoom) return `다른 기기에서도 이 이름으로 로그인 · 관리자 기기 ${Object.keys(state.managerDevices).length}대`;
   return state.managerBinding ? '관리자 휴대폰 등록됨' : 'QR로 접속해 관리자 이름을 입력하세요.';
 }
 function queueManagerSave() {
@@ -363,7 +366,10 @@ function rosterCard(team) {
 
 function hostView() {
   if (state.presenting) return presentationView();
-  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>명단 자동 저장 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${state.managerBinding ? button('관리자 휴대폰 연결 해제', 'release-manager') : ''}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div>${oxQuestionEditor()}${zoomEditor(state.zoomDraft ?? state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, state.busy || !state.online, Boolean(state.zoomDraft))}</main>`;
+  const managerConnections = api.fixedRoom
+    ? Object.keys(state.managerDevices).map((uid, index) => `<button class="button soft" data-release-manager="${escape(uid)}" ${state.busy ? 'disabled' : ''}>${uid === state.uid ? '이 기기 로그아웃' : `관리자 기기 ${index + 1} 연결 해제`}</button>`).join('')
+    : state.managerBinding ? button('관리자 휴대폰 연결 해제', 'release-manager') : '';
+  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>${api.fixedRoom ? '공용 행사 · ' : ''}명단 자동 저장 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${managerConnections}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div>${oxQuestionEditor()}${zoomEditor(state.zoomDraft ?? state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, state.busy || !state.online, Boolean(state.zoomDraft))}</main>`;
 }
 
 function managerView() {
@@ -573,7 +579,7 @@ function participantView() {
   const needsFullscreen = !controllerFullscreen() && controllerCanFullscreen() && !state.fullscreenFallback;
   if (!enteringName && (portrait || needsFullscreen)) return `<main class="controller-gate"><h1>${needsFullscreen ? '전체화면 버튼을<br/>눌러주세요.' : '가로 화면으로 진행합니다.'}</h1><p>${needsFullscreen ? '버튼을 누르면 가로 전체화면으로 시작합니다.' : '기기를 가로로 돌려 참여해주세요.'}</p>${errorBanner()}${needsFullscreen ? `<button class="button dark" data-action="controller-start" ${state.screenStarting ? 'disabled' : ''}>${state.screenStarting ? '전환 중…' : '전체화면으로 시작'}</button>` : ''}</main>`;
   if (state.role === 'manager') return managerView();
-  if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>참가자 입장</h1><p>등록된 이름을 입력하세요.</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">이름</label><input id="real-name" maxlength="24" placeholder="실명 입력" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${TEAM_NAMES[id[0]]} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
+  if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>${managementEntry ? '행사 관리자 입장' : '참가자 입장'}</h1><p>${managementEntry ? '등록된 관리자 이름으로 같은 행사에 접속합니다.' : '등록된 이름을 입력하세요.'}</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">${managementEntry ? '관리자 이름' : '이름'}</label><input id="real-name" maxlength="24" placeholder="${managementEntry ? '등록된 관리자 이름' : '실명 입력'}" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${TEAM_NAMES[id[0]]} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
   if (state.presentation?.active && state.presentation.slideIndex >= 2) {
     const slide = STAGES[state.presentation.slideIndex];
     if (slide.game === 'reaction') return reactionParticipant({ game: state.reactionGame, slide, participant: state.participant, participantId: state.participantId, ready: state.reactionReady, disabled: state.busy || state.voting || (!state.online && (slide.view !== 'play' || !['selecting', 'open'].includes(state.reactionGame.control?.phase))) || state.controlsLocked, confirming: state.reactionConfirm, attempt: reactionClock.read(reactionKey()), error: errorBanner() });
@@ -1285,6 +1291,11 @@ function bindEvents() {
   }));
   $('#real-name')?.addEventListener('input', event => { state.name = event.target.value; state.choices = null; });
   $('#name-form')?.addEventListener('submit', join);
+  document.querySelectorAll('[data-release-manager]').forEach(control => control.addEventListener('click', async () => {
+    if (confirm('이 관리자 기기의 연결을 해제할까요?')) {
+      try { await api.releaseManager(state.room, control.dataset.releaseManager); } catch (error) { showError(error); }
+    }
+  }));
   document.querySelectorAll('[data-release]').forEach(control => control.addEventListener('click', async () => {
     const id = control.dataset.release;
     if (confirm(`${state.participants[id].name} 님의 기기 연결을 해제할까요?`)) { try { await api.releaseParticipant(state.room, id, state.bindings[id].uid); queueRosterSave(); } catch (error) { showError(error); } }
@@ -1304,6 +1315,7 @@ async function join(event) {
       if (!state.name.trim()) throw { userMessage: '본인의 실명을 입력해주세요.' };
       const manager = await api.lookupManager(state.room, state.name).catch(() => null);
       if (manager) { await api.claimManager(state.room, state.name, state.uid); return; }
+      if (managementEntry) throw { userMessage: '등록된 관리자 이름을 확인해주세요.' };
       const choices = await api.lookupName(state.room, state.name);
       if (!choices || !Object.keys(choices).length) throw { userMessage: '등록된 이름을 찾지 못했어요. 진행자에게 알려주세요.' };
       if (Object.keys(choices).length > 1) { state.choices = choices; return; }
@@ -1525,20 +1537,37 @@ function watchManagement() {
   managementSubscriptions.watch('operatorError', value => { state.operatorError = value; schedule(); }, showError);
   managementSubscriptions.watch('oxQuestions', value => { state.oxQuestions = value; schedule(); }, showGameError);
   managementSubscriptions.watch('zoomQuestions', value => { state.zoomQuestions = value; schedule(); }, showGameError);
-  if (state.role === 'host') managementSubscriptions.watch('responses', value => { state.responses = value ?? {}; chooseWinner(); schedule(); }, showError);
+  if (state.role === 'host') {
+    managementSubscriptions.watch('responses', value => { state.responses = value ?? {}; chooseWinner(); schedule(); }, showError);
+    managementSubscriptions.watch('managerLookup', value => {
+      const savedName = Object.values(value ?? {})[0]?.name ?? '';
+      if (!state.managerDirty) {
+        if (!savedName && state.managerName) state.managerDirty = true;
+        else state.managerName = savedName;
+        local.set(managerStorageKey, state.managerName);
+      }
+      state.managerError = '';
+      queueManagerSave();
+      schedule();
+    }, () => { state.managerError = '관리자 기능은 Firebase 권한 규칙 반영 후 사용할 수 있습니다.'; schedule(); });
+    if (api.fixedRoom) managementSubscriptions.watch('managerDevices', value => { state.managerDevices = value ?? {}; schedule(); }, showError);
+    else managementSubscriptions.watch('managerBinding', value => { state.managerBinding = value; schedule(); }, () => {});
+  }
 }
 
 function attachManager(device) {
   if (device) {
-    state.role = 'manager';
-    state.ready = true;
+    state.role = managementEntry ? 'host' : 'manager';
+    state.ready = !managementEntry;
     state.error = '';
     void api.read(state.room, `managerLookup/${device.nameKey}`).then(value => { state.managerName = value?.name ?? state.name; schedule(); }).catch(showError);
     watchManagement();
     syncPresentation(state.presentation);
-  } else if (state.role === 'manager') {
+  } else if (state.role === 'manager' || (managementEntry && state.role === 'host')) {
     managementSubscriptions.clear();
     state.role = 'participant'; state.participants = {}; state.bindings = {}; state.presence = {};
+    state.rows = rowsFromParticipants(); state.dirty = false; state.managerDirty = false; state.managerDevices = {};
+    state.oxQuestions = null; state.oxDraft = null; state.zoomQuestions = null; state.zoomDraft = null;
     state.presenting = false; state.winner = null; state.error = ''; state.gameError = ''; state.operatorError = null; state.name = '';
     watchActiveGame();
     schedule();
@@ -1604,13 +1633,14 @@ async function start() {
       else { void syncPresence(); queueRosterSave(); queueManagerSave(); }
       schedule();
     });
-    if (state.role === 'host') {
+    if (!api.fixedRoom && state.role === 'host') {
       state.room = local.get('martini.host-room');
       if (state.room) { const meta = await api.read(state.room, 'meta'); if (!meta || meta.ownerUid !== state.uid) state.room = null; }
       if (!state.room) { state.room = await api.createRoom(state.uid); local.set('martini.host-room', state.room); }
     }
     const meta = await api.read(state.room, 'meta');
     if (!meta) throw { userMessage: '행사를 찾을 수 없습니다. QR을 다시 스캔해주세요.' };
+    if (managementEntry && meta.ownerUid === state.uid) state.role = 'host';
     state.meta = meta;
     state.ready = state.role === 'participant';
     api.watch(state.room, 'meta', value => { state.meta = value; schedule(); }, showError);
@@ -1619,21 +1649,9 @@ async function start() {
     if (state.role === 'host') {
       state.bindings = await api.read(state.room, 'bindings') ?? {};
       watchManagement();
-      api.watch(state.room, 'managerLookup', value => {
-        const savedName = Object.values(value ?? {})[0]?.name ?? '';
-        if (!state.managerDirty) {
-          if (!savedName && state.managerName) state.managerDirty = true;
-          else state.managerName = savedName;
-          local.set(managerStorageKey, state.managerName);
-        }
-        state.managerError = '';
-        queueManagerSave();
-        schedule();
-      }, () => { state.managerError = '관리자 기능은 Firebase 권한 규칙 반영 후 사용할 수 있습니다.'; schedule(); });
-      api.watch(state.room, 'managerBinding', value => { state.managerBinding = value; schedule(); }, () => {});
     } else {
       api.watch(state.room, `managerDevices/${state.uid}`, attachManager, () => {});
-      api.watch(state.room, `devices/${state.uid}`, value => { if ((value?.participantId ?? null) !== state.participantId) attachParticipant(value?.participantId ?? null); }, showError);
+      if (!managementEntry) api.watch(state.room, `devices/${state.uid}`, value => { if ((value?.participantId ?? null) !== state.participantId) attachParticipant(value?.participantId ?? null); }, showError);
     }
     schedule();
   } catch (error) { showError(error); }

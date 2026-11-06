@@ -1,10 +1,14 @@
 import { writeFile } from 'node:fs/promises';
-import { STAGES } from '../src/event-model.js';
+import { STAGES, SINGLE_EVENT_ROOM } from '../src/event-model.js';
 
 const s = "root.child('mtChatV1/sessions').child($session)";
-const owner = `auth != null && ${s}.child('meta/ownerUid').val() === auth.uid`;
-const manager = `auth != null && !${s}.child('devices').child(auth.uid).exists() && ${s}.child('managerBinding/uid').val() === auth.uid && ${s}.child('managerDevices').child(auth.uid).child('nameKey').val() === ${s}.child('managerBinding/nameKey').val() && ${s}.child('managerLookup').child(${s}.child('managerBinding/nameKey').val()).exists()`;
-const controller = `(${owner}) || (${manager})`;
+const fixedSession = `$session === '${SINGLE_EVENT_ROOM}'`;
+const originalOwner = `auth != null && ${s}.child('meta/ownerUid').val() === auth.uid`;
+const managerDevice = `${s}.child('managerDevices').child(auth.uid)`;
+const manager = `auth != null && !${s}.child('devices').child(auth.uid).exists() && ${managerDevice}.exists() && ${s}.child('managerLookup').child(${managerDevice}.child('nameKey').val()).exists() && ((${fixedSession}) || (${s}.child('managerBinding/uid').val() === auth.uid && ${managerDevice}.child('nameKey').val() === ${s}.child('managerBinding/nameKey').val()))`;
+// The shared event's registered managers can operate it from multiple devices.
+const owner = `(${originalOwner}) || ((${fixedSession}) && (${manager}))`;
+const controller = `(${originalOwner}) || (${manager})`;
 const pid = `${s}.child('devices').child(auth.uid).child('participantId').val()`;
 const member = `auth != null && ${s}.child('devices').child(auth.uid).exists() && ${s}.child('bindings').child(${pid}).child('uid').val() === auth.uid`;
 const active = `(${s}.child('stage/step').val() === 'join' || ${s}.child('stage/step').val() === 'chat')`;
@@ -522,7 +526,7 @@ const session = {
     '$uid': {
       '.read': 'auth != null && auth.uid === $uid',
       '.write': `(${owner}) || (auth != null && auth.uid === $uid && !data.exists() && newData.exists() && !${s}.child('devices').child(auth.uid).exists())`,
-      '.validate': "newData.hasChildren(['nameKey']) && newData.parent().parent().child('managerBinding/uid').val() === $uid && newData.parent().parent().child('managerBinding/nameKey').val() === newData.child('nameKey').val()",
+      '.validate': `newData.hasChildren(['nameKey']) && !newData.parent().parent().child('devices').child($uid).exists() && (((${fixedSession}) && newData.parent().parent().child('managerLookup').child(newData.child('nameKey').val()).exists()) || (newData.parent().parent().child('managerBinding/uid').val() === $uid && newData.parent().parent().child('managerBinding/nameKey').val() === newData.child('nameKey').val()))`,
       nameKey: text(192), '$other': denyExtra,
     },
   },

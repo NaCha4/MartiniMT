@@ -1,4 +1,5 @@
 export const ROOT = 'mtChatV1/sessions';
+export const SINGLE_EVENT_ROOM = '-P5fQkxsEi5lgI-MdoDV';
 export const TEAM_IDS = ['A', 'B', 'C', 'D'];
 export const TEAM_NAMES = { A: '1조', B: '2조', C: '3조', D: '4조' };
 export const MAX_MESSAGE = 1000;

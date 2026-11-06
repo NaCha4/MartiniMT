@@ -3,7 +3,7 @@ import { getAuth, setPersistence, browserLocalPersistence, signInAnonymously, co
 import { getDatabase, connectDatabaseEmulator, ref, get, set, update, push, onValue, onChildAdded, onChildChanged, onChildRemoved, query, orderByChild, limitToLast, onDisconnect, serverTimestamp, runTransaction } from 'firebase/database';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { firebaseConfig, appCheckSiteKey } from '../firebase-config.js';
-import { ROOT, TEAM_IDS, nameKey, TOUCH_TITLE, TOUCH_BODY } from './event-model.js';
+import { ROOT, SINGLE_EVENT_ROOM, TEAM_IDS, nameKey, TOUCH_TITLE, TOUCH_BODY } from './event-model.js';
 import { TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward } from './taste-model.js';
 import { OX_QUESTION_COUNT, oxQuestionsReady, oxSurvivors, oxPoints } from './ox-model.js';
 import { ZOOM_QUESTION_COUNT, ZOOM_LEVELS, zoomQuestionsReady, zoomPoints, judgeZoomRequest, finishZoomFeedback } from './zoom-model.js';
@@ -14,6 +14,7 @@ import { memoryExcludedIds, memoryOutcome } from './memory-model.js';
 import { reactionExcludedIds, reactionOutcome } from './reaction-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
+export const fixedRoom = emulator ? import.meta.env.VITE_FIXED_EVENT_ROOM || null : SINGLE_EVENT_ROOM;
 let db, auth;
 export async function connect() {
   if (!db) {
@@ -52,12 +53,14 @@ export async function saveManagerName(room, name) {
 }
 export async function claimManager(room, name, uid) {
   const key = nameKey(name);
+  if (room === SINGLE_EVENT_ROOM) return set(locationRef(room, `managerDevices/${uid}`), { nameKey: key });
   await update(locationRef(room), {
     managerBinding: { uid, nameKey: key, claimedAt: serverTimestamp() },
     [`managerDevices/${uid}`]: { nameKey: key },
   });
 }
 export async function releaseManager(room, uid) {
+  if (room === SINGLE_EVENT_ROOM) return set(locationRef(room, `managerDevices/${uid}`), null);
   await update(locationRef(room), { managerBinding: null, [`managerDevices/${uid}`]: null });
 }
 export function reportOperatorError(room, message) {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { ref, set, update, push, get, remove, query, orderByChild, limitToLast, onChildAdded, serverTimestamp } from 'firebase/database';
-import { rosterFromInputs, nameKey, TEAM_IDS } from '../src/event-model.js';
+import { rosterFromInputs, nameKey, TEAM_IDS, SINGLE_EVENT_ROOM } from '../src/event-model.js';
 import { WHISKY_OPTIONS, SOJU_OPTIONS, MILITARY_OPTIONS } from '../src/taste-model.js';
 import { STAGES } from '../src/event-model.js';
 import { emptyOxQuestions } from '../src/ox-model.js';
@@ -478,6 +478,48 @@ async function configureManager() {
 const claimManager = (uid, name = '진행자') => update(location(db(uid)), {
   managerBinding: { uid, nameKey: nameKey(name), claimedAt: serverTimestamp() },
   [`managerDevices/${uid}`]: { nameKey: nameKey(name) },
+});
+
+test('the fixed event permits registered managers on multiple devices and revokes their access when removed', async () => {
+  const fixed = (database, sub = '') => ref(database, `mtChatV1/sessions/${SINGLE_EVENT_ROOM}${sub ? `/${sub}` : ''}`);
+  const key = nameKey('공동진행');
+  await set(fixed(db('host')), {
+    meta: { ownerUid: 'host', title: '공용 행사', createdAt: serverTimestamp() },
+    stage: { step: 'join', updatedAt: serverTimestamp() },
+    ...roster,
+    managerLookup: { [key]: { name: '공동진행' } },
+  });
+  await assertFails(get(fixed(db(null))));
+  await assertFails(get(fixed(db('visitor'), 'participants')));
+  await assertFails(get(fixed(db('visitor'), 'managerLookup')));
+  await assertFails(set(fixed(db('visitor'), 'managerDevices/visitor'), { nameKey: nameKey('잘못된이름') }));
+  await assertFails(set(fixed(db('visitor'), 'managerDevices/other'), { nameKey: key }));
+  for (const uid of ['laptop', 'desktop']) {
+    await assertSucceeds(set(fixed(db(uid), `managerDevices/${uid}`), { nameKey: key }));
+    await assertSucceeds(get(fixed(db(uid))));
+  }
+  await assertFails(update(fixed(db('dual-role')), {
+    'managerDevices/dual-role': { nameKey: key },
+    'bindings/A1': { uid: 'dual-role', claimedAt: serverTimestamp() },
+    'devices/dual-role': { participantId: 'A1' },
+  }));
+  await assertSucceeds(update(fixed(db('laptop'), 'participants/A1'), { name: '수정된참가자' }));
+  const questions = Object.fromEntries(Array.from({ length: 5 }, (_, index) => [index, { text: `문제 ${index}`, answer: 'O' }]));
+  await assertSucceeds(set(fixed(db('laptop'), 'oxQuestions'), questions));
+  await assertSucceeds(get(fixed(db('desktop'), 'oxQuestions')));
+  await assertSucceeds(get(fixed(db('desktop'), 'responses')));
+  await assertFails(update(fixed(db('laptop'), 'meta'), { ownerUid: 'laptop' }));
+  await assertFails(get(location(db('laptop'))));
+  await assertSucceeds(remove(fixed(db('desktop'), 'managerDevices/laptop')));
+  await assertFails(get(fixed(db('laptop'))));
+  await assertFails(set(fixed(db('laptop'), 'oxQuestions'), questions));
+  await assertSucceeds(update(fixed(db('desktop')), {
+    managerLookup: { [nameKey('새진행자')]: { name: '새진행자' } },
+    managerBinding: null,
+    managerDevices: null,
+  }));
+  await assertFails(get(fixed(db('desktop'))));
+  await assertFails(set(fixed(db('laptop'), 'managerDevices/laptop'), { nameKey: key }));
 });
 
 test('manager lookup is exact and a single phone must claim both binding records atomically', async () => {
