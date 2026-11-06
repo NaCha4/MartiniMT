@@ -105,6 +105,22 @@ test('liar entry selects one per team atomically and excludes past entrants', as
   await assertSucceeds(enterLiar('A3', 1, next));
 });
 
+test('fixed liar contestants carry into later rounds while later recruitment is blocked', async () => {
+  await createLiarGame();
+  await update(location(db('host'), 'liarGame/control'), { fixedContestants: true });
+  await assertSucceeds(enterLiar('A1'));
+  const next = 'n'.repeat(20);
+  await update(location(db('host'), 'liarGame'), {
+    'control/roundId': next, 'control/questionIndex': 1, 'control/updatedAt': serverTimestamp(),
+    'rounds/1': { roundId: next, topic: '디저트', contestants: { A: liarEntry('A1', next) } },
+  });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'liar-select-2'), updatedAt: serverTimestamp() });
+  assert.equal((await get(location(db('A2'), 'liarGame/rounds/1/contestants/A'))).val().participantId, 'A1');
+  await assertFails(enterLiar('B1', 1, next));
+  await assertFails(enterLiar('A2', 1, next));
+  await assertFails(update(location(db('B1'), 'liarGame/control'), { fixedContestants: null }));
+});
+
 test('liar words stay personal and contestants cannot join the audience vote', async () => {
   await createLiarGame();
   await assertSucceeds(get(location(db('A1'), 'liarGame/roster/A1')));

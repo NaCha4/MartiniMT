@@ -2,9 +2,10 @@ import { TEAM_IDS, TEAM_NAMES, escapeHtml as escape } from './event-model.js';
 import { liarUsedIds, liarRosterReady } from './liar-model.js';
 
 export function liarControls(game, slide, disabled, roster) {
-  if (slide.view === 'intro') return `<section class="remote-game-controls"><p>${liarRosterReady(roster) ? '한 명 이상 출전하면 진행 · 각 조 최대 1명 · 총 3라운드' : '참가자를 먼저 등록해주세요.'}</p></section>`;
+  if (slide.view === 'intro') return `<section class="remote-game-controls"><p>${liarRosterReady(roster) ? '처음 확정한 출전자가 3라운드 모두 참여 · 매 라운드 라이어 무작위 선정' : '참가자를 먼저 등록해주세요.'}</p></section>`;
   const round = game.rounds?.[slide.questionIndex];
-  if (slide.view === 'select') return `<section class="remote-game-controls"><p>${Object.keys(round?.contestants ?? {}).length}명 출전 확정</p><p>한 명 이상 출전하면 다음 화면으로 진행할 수 있습니다.</p></section>`;
+  if (slide.view === 'select' && slide.questionIndex > 0) return '<section class="remote-game-controls"><p>첫 라운드 출전자가 계속 참여합니다. 다음 화면으로 진행해주세요.</p></section>';
+  if (slide.view === 'select') return `<section class="remote-game-controls"><p>${Object.keys(round?.contestants ?? {}).length}명 출전 확정</p><p>한 명 이상 출전하면 진행 · 같은 출전자로 3라운드 진행</p></section>`;
   if (slide.view === 'score' || !round) return '';
   const phase = game.control?.questionIndex === slide.questionIndex ? game.control.phase : 'finished';
   const actions = { selecting: ['단어 전달', 'liar-deal'], describing: ['투표', 'liar-vote'], voting: ['투표 종료', 'liar-finish'], closed: ['정답 공개', 'liar-reveal'] };
@@ -13,7 +14,7 @@ export function liarControls(game, slide, disabled, roster) {
 }
 
 export function liarPresentation(game, slide, now = Date.now()) {
-  if (slide.view === 'intro') return `<section class="taste-screen liar-intro"><span class="taste-eyebrow">RECREATION 04</span><h1>라이어게임</h1><div class="liar-rules"><p>각 조에서 새로운 팀원 <b>최대 1명씩 출전</b></p><p>한 명 이상 출전하면 진행할 수 있습니다.</p><p>출전자 중 1명에게는 단어가 전달되지 않습니다.</p><p>비출전자 투표로 라이어를 찾아주세요.</p><p>적발 성공 <b>나머지 세 팀 +50점</b> · 라이어 생존 <b>라이어 팀 +150점</b></p></div></section>`;
+  if (slide.view === 'intro') return `<section class="taste-screen liar-intro"><span class="taste-eyebrow">RECREATION 04</span><h1>라이어게임</h1><div class="liar-rules"><p>각 조 <b>최대 1명씩 출전</b> · 한 명부터 진행 가능</p><p><b>같은 출전자</b>가 세 라운드 모두 참여합니다.</p><p>라이어는 매 라운드 <b>무작위 선정</b>합니다.</p><p>비출전자 투표로 라이어를 찾아주세요.</p><p>적발 성공 <b>나머지 세 팀 +50점</b> · 라이어 생존 <b>라이어 팀 +150점</b></p></div></section>`;
   const round = game.rounds?.[slide.questionIndex];
   const phase = game.control?.questionIndex === slide.questionIndex ? game.control.phase : 'finished';
   if (slide.view === 'play' && (round?.tally || round?.result)) {
@@ -30,6 +31,7 @@ export function liarPresentation(game, slide, now = Date.now()) {
         return `<article class="liar-contestant ${isLiar ? 'is-liar' : round.result ? 'is-other' : ''}" data-team="${team}" data-liar-candidate="${person.participantId}">${isLiar ? '<b class="liar-badge">라이어</b>' : ''}<span>${TEAM_NAMES[team]}</span><strong>${escape(person.name)}</strong><div class="liar-vote-bar"><i style="width:${count / maximum * 100}%"></i></div><b class="liar-vote-count">${count}<small>표</small></b></article>`;
       }).join('')}</div><p class="liar-status">${round.result ? '라이어 공개 후 점수를 반영합니다' : '정답 공개를 기다립니다'}</p></section>`;
   }
+  if (slide.view === 'play') return `<section class="taste-screen liar-screen liar-topic" aria-labelledby="liar-topic-title"><p class="liar-topic-label">주제</p><h1 id="liar-topic-title">${escape(round?.topic ?? '준비 중')}</h1></section>`;
   return `<section class="taste-screen liar-screen"><header class="liar-heading"><span>LIAR GAME</span><span>${slide.questionIndex + 1} / 3</span></header>
     <h1>${slide.view === 'select' ? '출전자를 기다립니다' : escape(round?.topic ?? '')}</h1>
     <div class="liar-contestants">${TEAM_IDS.map(team => {
@@ -50,10 +52,10 @@ export function liarParticipant({ game, round, slide, participant, participantId
   const contestants = round.contestants ?? {};
   const ownEntry = Object.values(contestants).some(person => person.participantId === participantId);
   const used = liarUsedIds(game).has(participantId);
-  const current = game.control?.questionIndex === slide.questionIndex;
+  const current = game.control && game.control.questionIndex === slide.questionIndex;
   const phase = current ? game.control.phase : '';
   const shell = content => `<main class="controller-main taste-mobile liar-mobile" data-team="${escape(participant.team)}">${error}${content}</main>`;
-  if (slide.view === 'select' && phase === 'selecting' && !contestants[participant.team] && !used) {
+  if (slide.view === 'select' && slide.questionIndex === 0 && phase === 'selecting' && !contestants[participant.team] && !used) {
     if (confirming) return shell(`<section class="liar-confirm" role="dialog" aria-modal="true" aria-labelledby="liar-confirm-title"><h1 id="liar-confirm-title">정말 출전하시겠습니까?</h1><div><button class="button dark" data-liar-action="liar-confirm" ${disabled || !ready ? 'disabled' : ''}>예</button><button class="button soft" data-liar-action="liar-cancel" ${disabled ? 'disabled' : ''}>아니오</button></div></section>`);
     return shell(`<button class="liar-enter" data-liar-action="liar-volunteer" ${disabled || !ready ? 'disabled' : ''}><strong>출전하기</strong><span>화면을 눌러주세요</span></button>`);
   }
@@ -61,7 +63,11 @@ export function liarParticipant({ game, round, slide, participant, participantId
     const person = contestants[team];
     return person ? `<button data-liar-vote="${escape(person.participantId)}" data-team="${team}" ${disabled || !ready ? 'disabled' : ''}><small>${TEAM_NAMES[team]}</small><strong>${escape(person.name)}</strong></button>` : '';
   }).join('')}</div>`);
-  if (slide.view === 'play' && ownEntry && ['describing', 'voting'].includes(phase)) return shell(`<section class="liar-word"><p>내 단어</p><h1>${escape(round.card?.word ?? '')}</h1></section>`);
+  if (slide.view === 'play' && ownEntry && ['describing', 'voting'].includes(phase)) {
+    const word = round.card?.word;
+    if (typeof word !== 'string') return shell('<h1>단어 전달 중</h1>');
+    return shell(`<section class="liar-word"><p>${word === '' ? '내 역할' : '내 단어'}</p><h1>${word === '' ? '라이어' : escape(word)}</h1></section>`);
+  }
   const message = ownEntry && slide.view === 'select' ? '출전 확정' : slide.view === 'select' && used ? '이미 출전했습니다' : slide.view === 'select' && contestants[participant.team] ? '우리 조 출전자가 정해졌습니다' : phase === 'voting' && round.vote ? '투표 완료' : phase === 'closed' ? '정답 공개를 기다립니다' : '대기 중';
   return shell(`<h1>${message}</h1>`);
 }

@@ -10,12 +10,21 @@ import { scoreAward } from '../src/taste-model.js';
 
 const contestants = Object.fromEntries(TEAM_IDS.map(team => [team, { participantId: `${team}1`, team, teamName: `${team}조`, name: `${team}선수` }]));
 
-test('liar follows the zoom quiz with three independent selection, play and score rounds', () => {
+test('liar recruits once and skips later recruitment screens without changing stored indices', () => {
   const stages = STAGES.filter(stage => stage.game === 'liar');
   assert.deepEqual(stages.map(stage => stage.screenCode), Array.from({ length: 10 }, (_, i) => i + 38));
   assert.deepEqual(stages.map(stage => stage.view), ['intro', ...Array.from({ length: 3 }, () => ['select', 'play', 'score']).flat()]);
   const zoomScore = STAGES.findIndex(stage => stage.id === 'zoom-score');
   assert.equal(STAGES[stageIndex(zoomScore, 1)].id, 'liar-intro');
+  for (const round of [2, 3]) {
+    const select = STAGES.findIndex(stage => stage.id === `liar-select-${round}`);
+    const play = STAGES.findIndex(stage => stage.id === `liar-play-${round}`);
+    const previous = STAGES.findIndex(stage => stage.id === `liar-score-${round - 1}`);
+    assert.equal(stageIndex(previous, 1), play);
+    assert.equal(stageIndex(play, -1), previous);
+    assert.equal(stageIndex(select, 1), play);
+    assert.equal(stageIndex(select, -1), previous);
+  }
   assert.deepEqual(LIAR_PROMPTS, [{ topic: '술', word: '막걸리' }, { topic: '디저트', word: '한정선 과일모찌' }, { topic: '직업', word: '대통령' }]);
 });
 
@@ -92,6 +101,75 @@ test('presenter and spectators never receive the private word in rendered markup
   assert.ok(!liarParticipant({ ...common, participantId: 'A2', round: { contestants } }).includes('막걸리'));
   assert.ok(liarParticipant({ ...common, participantId: 'A1', round: { contestants, card: { word: '막걸리' } } }).includes('막걸리'));
   assert.ok(!liarParticipant({ ...common, participantId: 'A1', round: { contestants, card: { word: '' } } }).includes('막걸리'));
+});
+
+test('liar play presentation shows only the labeled topic until vote totals are ready', () => {
+  const round = { topic: '술', contestants };
+  const slide = { game: 'liar', view: 'play', questionIndex: 0 };
+  for (const phase of ['selecting', 'describing', 'voting']) {
+    const game = { control: { phase, questionIndex: 0 }, rounds: { 0: round } };
+    const html = liarPresentation(game, slide);
+    assert.match(html, /class="liar-topic-label">주제<\/p>/);
+    assert.match(html, /id="liar-topic-title">술<\/h1>/);
+    assert.doesNotMatch(html, /liar-contestants|liar-status|LIAR GAME|A선수/);
+  }
+  const selecting = liarPresentation({ rounds: { 0: round } }, { ...slide, view: 'select' });
+  assert.match(selecting, /liar-contestants/);
+});
+
+test('an empty delivered word identifies the liar while a pending card keeps loading', () => {
+  const slide = { game: 'liar', view: 'play', questionIndex: 0 };
+  for (const phase of ['describing', 'voting']) {
+    const common = { game: { control: { phase, questionIndex: 0 } }, slide, participant: { team: 'A' }, participantId: 'A1', ready: true, error: '' };
+    const liar = liarParticipant({ ...common, round: { contestants, card: { word: '' } } });
+    assert.match(liar, /<p>내 역할<\/p><h1>라이어<\/h1>/);
+    const waiting = liarParticipant({ ...common, round: { contestants } });
+    assert.match(waiting, /단어 전달 중/);
+    assert.doesNotMatch(waiting, /<h1>라이어<\/h1>/);
+    const player = liarParticipant({ ...common, round: { contestants, card: { word: '<단어>' } } });
+    assert.match(player, /<p>내 단어<\/p><h1>&lt;단어&gt;<\/h1>/);
+  }
+});
+
+test('liar introduction waits safely before game control arrives', () => {
+  const html = liarParticipant({ game: { control: null }, round: {}, slide: { game: 'liar', view: 'intro' }, participant: { team: 'A' }, participantId: 'A1', error: '' });
+  assert.match(html, /대기 중/);
+});
+
+test('round preparation retains first entrants and resumes legacy recruitment without changing an active round', async () => {
+  const source = readFileSync(new URL('../src/event-data.js', import.meta.url), 'utf8');
+  const prepare = source.slice(source.indexOf('export async function prepareLiarRound('), source.indexOf('export async function claimLiarEntry('))
+    .replace('export ', '').replace("const { LIAR_PROMPTS } = await import('./liar-prompts.js');", '');
+  const first = { roundId: 'first', contestants, result: { revealedAt: 1 } };
+  let game = { control: { roundId: 'first', questionIndex: 0, phase: 'finished' }, rounds: { 0: first } };
+  const context = vm.createContext({
+    LIAR_PROMPTS, liarRosterReady, locationRef: () => 'game', push: () => ({ key: 'new-round' }), serverTimestamp: () => 123,
+    transactLoaded: async (_path, update) => {
+      game = update(game) ?? game;
+      return { snapshot: { val: () => game } };
+    },
+  });
+  vm.runInContext(prepare, context);
+  await context.prepareLiarRound('room', {}, 1);
+  assert.equal(game.control.fixedContestants, true);
+  assert.equal(game.rounds[1].contestants.A.participantId, 'A1');
+  assert.equal(game.rounds[1].contestants.A.roundId, 'new-round');
+  assert.equal(game.rounds[0], first);
+  const prepared = game;
+  await context.prepareLiarRound('room', {}, 1);
+  assert.equal(game, prepared);
+
+  game = { control: { roundId: 'legacy-round', questionIndex: 1, phase: 'selecting' }, rounds: { 0: first, 1: { roundId: 'legacy-round' } } };
+  await context.prepareLiarRound('room', {}, 1);
+  assert.equal(game.control.roundId, 'legacy-round');
+  assert.equal(game.control.fixedContestants, true);
+  assert.equal(game.rounds[1].contestants.A.participantId, 'A1');
+  assert.equal(game.rounds[1].contestants.A.roundId, 'legacy-round');
+
+  game = { control: { roundId: 'active', questionIndex: 1, phase: 'voting' }, rounds: { 0: first, 1: { roundId: 'active', contestants: { A: { participantId: 'A2' } } } } };
+  const active = game;
+  await context.prepareLiarRound('room', {}, 1);
+  assert.equal(game, active);
 });
 
 function revealTransition({ scored = false, now = 1000 } = {}) {

@@ -190,6 +190,7 @@ const liarGameRules = {
     '.read': gameReader, '.validate': "newData.hasChildren(['roundId','questionIndex','phase','updatedAt'])",
     roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' },
     questionIndex: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() < 3 && newData.val() % 1 === 0' },
+    fixedContestants: { '.validate': 'newData.val() === true' },
     phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'describing' || newData.val() === 'voting' || newData.val() === 'closed' || newData.val() === 'finished'" },
     updatedAt: storedTimestamp, '$other': denyExtra,
   },
@@ -205,7 +206,7 @@ const liarGameRules = {
       contestants: {
         '.read': gameReader,
         '$team': {
-          '.write': `(${member}) && ${liar}.child('roster').child(${pid}).child('team').val() === $team && ${s}.child('presentation/active').val() === true && (${liarScreen('select')}) && ${liar}.child('control/phase').val() === 'selecting' && ${liar}.child('control/questionIndex').val() + '' === $round && newData.child('participantId').val() === ${pid} && newData.child('roundId').val() === ${liar}.child('control/roundId').val() && (${liarNotUsed}) && !data.exists() && newData.exists()`,
+          '.write': `(${member}) && (${liar}.child('control/fixedContestants').val() !== true || $round === '0') && ${liar}.child('roster').child(${pid}).child('team').val() === $team && ${s}.child('presentation/active').val() === true && (${liarScreen('select')}) && ${liar}.child('control/phase').val() === 'selecting' && ${liar}.child('control/questionIndex').val() + '' === $round && newData.child('participantId').val() === ${pid} && newData.child('roundId').val() === ${liar}.child('control/roundId').val() && (${liarNotUsed}) && !data.exists() && newData.exists()`,
           '.validate': `($team === 'A' || $team === 'B' || $team === 'C' || $team === 'D') && newData.hasChildren(['participantId','name','team','teamName','roundId','selectedAt']) && newData.child('roundId').val() === newData.parent().parent().child('roundId').val() && newData.child('team').val() === $team && newData.child('name').val() === ${liar}.child('roster').child(newData.child('participantId').val()).child('name').val() && newData.child('team').val() === ${liar}.child('roster').child(newData.child('participantId').val()).child('team').val() && newData.child('teamName').val() === ${liar}.child('roster').child(newData.child('participantId').val()).child('teamName').val()`,
           participantId: text(2), name: text(24), team, teamName: text(20), roundId: text(20), selectedAt: storedTimestamp, '$other': denyExtra,
         },

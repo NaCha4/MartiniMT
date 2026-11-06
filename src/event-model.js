@@ -41,9 +41,9 @@ export const STAGES = [
     title: `사진 ${questionIndex + 1}번`, script: '사진의 정체를 알겠다면 정답 제출 버튼을 눌러주세요. 먼저 요청한 한 명만 답변합니다. 각 조는 사진마다 한 번만 요청할 수 있으며, 요청한 조는 다음 사진부터 다시 참여합니다.',
   })),
   { id: 'zoom-score', screenCode: 37, game: 'zoom', view: 'score', title: '사진 퀴즈 최종 점수', script: '다섯 장의 사진이 모두 공개되었습니다. 정답 한 개당 50점을 팀 점수에 합산하겠습니다.' },
-  { id: 'liar-intro', screenCode: 38, game: 'liar', view: 'intro', title: '라이어게임', script: '각 조에서 최대 한 명씩 출전합니다. 한 명 이상 출전하면 진행할 수 있습니다. 매 라운드 새로운 팀원이 출전하며 총 세 번 진행합니다. 출전자 중 한 명은 단어를 받지 못한 라이어입니다. 차례대로 단어를 묘사한 뒤, 출전자를 제외한 모두가 라이어에게 투표합니다. 라이어가 공동 1위를 포함해 가장 많은 표를 받으면 나머지 세 팀에 각각 50점, 아니라면 라이어 팀에 150점입니다.' },
+  { id: 'liar-intro', screenCode: 38, game: 'liar', view: 'intro', title: '라이어게임', script: '각 조에서 최대 한 명씩 출전합니다. 한 명 이상 출전하면 진행할 수 있습니다. 처음 확정한 출전자가 세 라운드 모두 참여하며, 라이어는 매 라운드 무작위로 선정합니다. 차례대로 단어를 묘사한 뒤, 출전자를 제외한 모두가 라이어에게 투표합니다. 라이어가 공동 1위를 포함해 가장 많은 표를 받으면 나머지 세 팀에 각각 50점, 아니라면 라이어 팀에 150점입니다.' },
   ...Array.from({ length: 3 }, (_, questionIndex) => [
-    { id: `liar-select-${questionIndex + 1}`, screenCode: 39 + questionIndex * 3, game: 'liar', view: 'select', questionIndex, title: `라이어 ${questionIndex + 1}라운드 출전자`, script: '각 조에서 이번에 출전할 한 명이 휴대폰을 누른 뒤 예를 선택해주세요. 이미 출전한 사람은 다시 출전할 수 없습니다.' },
+    { id: `liar-select-${questionIndex + 1}`, screenCode: 39 + questionIndex * 3, game: 'liar', view: 'select', questionIndex, title: `라이어 ${questionIndex + 1}라운드 출전자`, script: '처음 확정한 출전자가 세 라운드 모두 참여합니다. 각 조에서 한 명이 휴대폰을 누른 뒤 예를 선택해주세요.' },
     { id: `liar-play-${questionIndex + 1}`, screenCode: 40 + questionIndex * 3, game: 'liar', view: 'play', questionIndex, title: `라이어 ${questionIndex + 1}라운드`, script: '단어 전달을 누르면 출전자 중 한 명이 무작위 라이어가 됩니다. 출전자들은 휴대폰을 확인해주세요. 진행자가 한 명씩 차례로 묘사를 시킨 뒤 투표를 시작합니다. 출전자는 투표에 참여하지 않습니다. 투표 종료 후 득표를 확인하고 정답 공개를 눌러주세요. 라이어 공개가 끝나면 점수로 이동합니다.' },
     { id: `liar-score-${questionIndex + 1}`, screenCode: 41 + questionIndex * 3, game: 'liar', view: 'score', questionIndex, title: `라이어 ${questionIndex + 1}라운드 점수`, script: '라이어 적발 여부에 따른 점수를 합산하고 현재 순위를 확인하겠습니다.' },
   ]).flat(),
@@ -54,6 +54,7 @@ export const STAGES = [
 ];
 // Append new stages so stored slide indices and existing screen codes stay valid.
 const presentationOrder = STAGES.flatMap((stage, index) => {
+  if (stage.game === 'liar' && stage.view === 'select' && stage.questionIndex > 0) return [];
   if (stage.view === 'survivors' || (stage.game === 'ox' && stage.view === 'reveal')) return [];
   if (stage.game === 'ox' && stage.view === 'question') return [index, STAGES.findIndex(candidate => candidate.view === 'survivors' && candidate.questionIndex === stage.questionIndex)];
   return [index];
@@ -72,6 +73,11 @@ export function participantUrl(href, room, networkUrl) {
 }
 export function stageIndex(index, direction) {
   const stage = STAGES[index];
+  // Saved sessions can still point at a later-round recruitment screen.
+  if (stage?.game === 'liar' && stage.view === 'select' && stage.questionIndex > 0) {
+    const play = STAGES.findIndex(candidate => candidate.game === 'liar' && candidate.view === 'play' && candidate.questionIndex === stage.questionIndex);
+    return direction > 0 ? play : stageIndex(play, direction);
+  }
   // Older sessions may still point at a separate OX answer stage.
   const current = stage?.game === 'ox' && stage.view === 'reveal'
     ? STAGES.findIndex(candidate => candidate.game === 'ox' && candidate.view === 'question' && candidate.questionIndex === stage.questionIndex)

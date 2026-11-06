@@ -8,14 +8,14 @@ async function setup(browser, playerIds) {
     await context.addInitScript(() => Object.defineProperty(document, 'fullscreenEnabled', { get: () => false }));
     const page = await context.newPage();
     if (name) {
-      await page.goto(await host.locator('#invite-url').inputValue());
+      await page.goto(await host.locator('#invite-url').inputValue(), { waitUntil: 'domcontentloaded' });
       await page.locator('#real-name').fill(name);
       await page.getByRole('button', { name: '입장', exact: true }).click();
     }
     return page;
   }
   const host = await pageFor();
-  await host.goto('/');
+  await host.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(host.locator('#manager-name')).toBeEnabled();
   await host.locator('#manager-name').fill('진행자');
   for (const team of ['A', 'B', 'C', 'D']) for (let n = 1; n <= 3; n++) await host.locator(`#name-${team}${n}`).fill(`${team}선수${n}`);

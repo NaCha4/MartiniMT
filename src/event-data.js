@@ -330,14 +330,18 @@ export async function prepareLiarRound(room, roster, questionIndex, resetAt = nu
   const roundId = push(locationRef(room, 'liarGame')).key;
   const result = await transactLoaded(locationRef(room, 'liarGame'), current => {
     if (current && (current.control.resetAt ?? null) !== resetAt) return;
-    if (current && questionIndex <= current.control.questionIndex) return;
+    const resumingSelection = current && questionIndex === current.control.questionIndex && questionIndex > 0
+      && current.control.phase === 'selecting' && !current.control.fixedContestants;
+    if (current && questionIndex <= current.control.questionIndex && !resumingSelection) return;
     if (!current && (questionIndex !== 0 || !liarRosterReady(roster))) throw { userMessage: '라이어게임에 참여할 참가자를 먼저 등록해주세요.' };
-    if (current && (questionIndex !== current.control.questionIndex + 1 || !current.rounds?.[questionIndex - 1]?.result)) throw { userMessage: '이전 라운드의 투표를 먼저 완료해주세요.' };
+    if (current && !resumingSelection && (questionIndex !== current.control.questionIndex + 1 || !current.rounds?.[questionIndex - 1]?.result)) throw { userMessage: '이전 라운드의 투표를 먼저 완료해주세요.' };
     if (!LIAR_PROMPTS[questionIndex]) throw { userMessage: '라이어게임은 세 라운드입니다.' };
+    const nextRoundId = resumingSelection ? current.control.roundId : roundId;
+    const contestants = Object.fromEntries(Object.entries(current?.rounds?.[0]?.contestants ?? {}).map(([team, person]) => [team, { ...person, roundId: nextRoundId, selectedAt: serverTimestamp() }]));
     return {
       ...current, roster: current?.roster ?? roster, prompts: current?.prompts ?? LIAR_PROMPTS,
-      control: { roundId, questionIndex, phase: 'selecting', resetAt, updatedAt: serverTimestamp() },
-      rounds: { ...current?.rounds, [questionIndex]: { roundId, topic: LIAR_PROMPTS[questionIndex].topic } },
+      control: { roundId: nextRoundId, questionIndex, phase: 'selecting', fixedContestants: true, resetAt, updatedAt: serverTimestamp() },
+      rounds: { ...current?.rounds, [questionIndex]: { roundId: nextRoundId, topic: LIAR_PROMPTS[questionIndex].topic, contestants } },
     };
   });
   const game = result.snapshot.val();
@@ -346,6 +350,7 @@ export async function prepareLiarRound(room, roster, questionIndex, resetAt = nu
 }
 
 export async function claimLiarEntry(room, participantId, questionIndex, roundId) {
+  if (questionIndex !== 0) throw { userMessage: '첫 라운드에서 확정한 출전자가 세 라운드 모두 참여합니다.' };
   const person = await read(room, `liarGame/roster/${participantId}`);
   if (!person) throw { userMessage: '게임 시작 시 등록된 참가자만 출전할 수 있습니다.' };
   const location = locationRef(room, `liarGame/rounds/${questionIndex}/contestants/${person.team}`);

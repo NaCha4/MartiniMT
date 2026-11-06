@@ -13,6 +13,13 @@ const game = () => ({
   rounds: { 0: { openedAt: 0, request: { id: 'request', participantId: 'A1', submittedAt: 1000 } } },
 });
 
+test('zoom participants wait safely before game control arrives', () => {
+  for (const control of [undefined, null]) {
+    const html = zoomParticipant({ game: { control }, round: {}, participant: { team: 'A' }, participantId: 'A1', error: '' });
+    assert.match(html, /사진 퀴즈를 준비하고 있습니다/);
+  }
+});
+
 test('zoom adds five questions after the existing OX screens with three zoom-outs', () => {
   assert.deepEqual(ZOOM_LEVELS, [40, 12, 4, 1]);
   assert.equal(STAGES[23].id, 'ox-score');

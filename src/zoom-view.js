@@ -66,7 +66,7 @@ export function zoomControls(game, slide, disabled) {
 
 export function zoomParticipant({ game, round, ready, participant, participantId, questionIndex, disabled, error }) {
   const control = game.control;
-  const current = control?.questionIndex === questionIndex;
+  const current = control && control.questionIndex === questionIndex;
   const ownRequest = round.request?.participantId === participantId;
   const teamRequest = round.request?.participantId?.startsWith(participant.team);
   let message = '사진 퀴즈를 준비하고 있습니다';

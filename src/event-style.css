@@ -720,6 +720,9 @@ dialog textarea { resize: vertical; }
 .liar-screen { display: flex; flex-direction: column; gap: 4vh; }
 .liar-heading { display: flex; justify-content: space-between; color: var(--color-text-secondary); letter-spacing: .15em; font-size: clamp(16px, 1.5vw, 26px); }
 .liar-screen h1 { margin: 2vh 0; text-align: center; font-size: clamp(48px, 6vw, 110px); line-height: 1.15; }
+.liar-topic { align-items: center; justify-content: center; text-align: center; }
+.liar-topic-label { margin: 0; color: var(--color-accent); font-size: clamp(28px, 3vw, 52px); font-weight: 600; }
+.liar-topic h1 { margin: 0; font-size: clamp(64px, 10vw, 180px); overflow-wrap: anywhere; }
 .liar-contestants { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2vw; flex: 1; min-height: 0; }
 .liar-contestant { display: flex; flex-direction: column; justify-content: center; gap: 3vh; padding: 2vw; border: 1px solid var(--signal-color); background: color-mix(in srgb, var(--signal-color) 8%, #171719); }
 .liar-contestant > span { color: var(--signal-color); font-size: clamp(24px, 2.6vw, 46px); }

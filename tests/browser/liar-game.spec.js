@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('one, two and three entrants can finish the full liar game with empty teams', async ({ browser }) => {
+for (const count of [1, 2, 3]) test(`${count} fixed entrants finish all three liar rounds with empty teams`, async ({ browser }) => {
   test.setTimeout(90000);
   const contexts = await Promise.all(Array.from({ length: 3 }, () => browser.newContext()));
   const [host, remote, audience] = await Promise.all(contexts.map(context => context.newPage()));
@@ -25,20 +25,26 @@ test('one, two and three entrants can finish the full liar game with empty teams
     const next = () => remote.getByRole('button', { name: '다음 화면', exact: true }).click();
     await next();
     await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeEnabled();
-    const entries = [['A1'], ['A2', 'B1'], ['A3', 'B2', 'C1']];
-    for (const [index, ids] of entries.entries()) {
-      await next();
-      await expect(host.locator('.presentation-screen-code')).toHaveText(String(39 + index * 3));
-      await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
-      await expect(host.locator('[data-action="liar-auto-entry"]')).toHaveCount(0);
-      await host.evaluate(async ({ index, ids }) => {
+    const ids = ['A1', 'B1', 'C1'].slice(0, count);
+    await next();
+    await expect(host.locator('.presentation-screen-code')).toHaveText('39');
+    await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+    await host.evaluate(async ids => {
         const api = await import('/src/event-data.js'); await api.connect();
         const room = localStorage.getItem('martini.host-room'), game = await api.read(room, 'liarGame');
-        for (const id of ids) await api.claimLiarEntry(room, id, index, game.control.roundId);
-      }, { index, ids });
-      await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeEnabled();
+        for (const id of ids) await api.claimLiarEntry(room, id, 0, game.control.roundId);
+    }, ids);
+    for (let index = 0; index < 3; index++) {
       await next();
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(40 + index * 3));
+      const retained = await host.evaluate(async index => {
+        const api = await import('/src/event-data.js'); await api.connect();
+        const game = await api.read(localStorage.getItem('martini.host-room'), 'liarGame');
+        return Object.values(game.rounds[index].contestants).map(person => person.participantId).sort();
+      }, index);
+      expect(retained).toEqual([...ids].sort());
       await remote.getByRole('button', { name: '단어 전달', exact: true }).click();
+      await expect(remote.getByRole('button', { name: '투표', exact: true })).toBeVisible();
       const cards = await host.evaluate(async index => {
         const api = await import('/src/event-data.js'); await api.connect();
         const round = await api.read(localStorage.getItem('martini.host-room'), `liarGame/rounds/${index}`);
@@ -64,7 +70,7 @@ test('one, two and three entrants can finish the full liar game with empty teams
   } finally { await Promise.all(contexts.map(context => context.close())); }
 });
 
-test('three liar rounds confirm unique entrants, deliver private words, exclude players from voting and award each result once', async ({ browser }) => {
+test('three liar rounds retain the initial entrants, redraw private roles and award each result once', async ({ browser }) => {
   test.setTimeout(180000);
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 960 } });
   const host = await desktop.newPage();
@@ -103,49 +109,55 @@ test('three liar rounds confirm unique entrants, deliver private words, exclude 
     await expect(host.locator('.presentation-screen-code')).toHaveText('38');
     let players = [], spectators = [];
     for (let index = 0; index < 3; index++) {
-      await next();
-      await expect(host.locator('.presentation-screen-code')).toHaveText(String(39 + index * 3));
-      if (players.length) {
-        await expect(players[0].getByRole('heading', { name: '이미 출전했습니다', exact: true })).toBeVisible();
-        for (const page of [...players, ...spectators]) { contexts.delete(page.context()); await page.context().close(); }
-        await host.evaluate(async () => {
-          const api = await import('/src/event-data.js'); await api.connect();
-          const room = localStorage.getItem('martini.host-room');
-          const bindings = await api.read(room, 'bindings');
-          await Promise.all(Object.entries(bindings ?? {}).map(([id, binding]) => api.releaseParticipant(room, id, binding.uid)));
-        });
-      }
-      players = await Promise.all(['A', 'B', 'C', 'D'].map(team => phone(invite, `${team}선수${index + 1}`)));
-      spectators = await Promise.all(['A', 'B'].map(team => phone(invite, `${team}선수${index === 2 ? 1 : 3}`)));
-      await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
-      for (const [position, page] of players.entries()) {
-        await page.getByRole('button', { name: /출전하기/ }).click();
-        await expect(page.getByRole('heading', { name: '정말 출전하시겠습니까?', exact: true })).toBeVisible();
-        if (position === 0 && index === 0) {
-          await page.getByRole('button', { name: '아니오', exact: true }).click();
-          await expect(host.locator('.liar-contestant[data-team="A"] strong')).toHaveText('출전 대기');
+      if (index === 0) {
+        await next();
+        await expect(host.locator('.presentation-screen-code')).toHaveText('39');
+        players = await Promise.all(['A', 'B', 'C', 'D'].map(team => phone(invite, `${team}선수1`)));
+        spectators = await Promise.all(['A', 'B'].map(team => phone(invite, `${team}선수3`)));
+        await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+        for (const [position, page] of players.entries()) {
           await page.getByRole('button', { name: /출전하기/ }).click();
+          await expect(page.getByRole('heading', { name: '정말 출전하시겠습니까?', exact: true })).toBeVisible();
+          if (position === 0) {
+            await page.getByRole('button', { name: '아니오', exact: true }).click();
+            await expect(host.locator('.liar-contestant[data-team="A"] strong')).toHaveText('출전 대기');
+            await page.getByRole('button', { name: /출전하기/ }).click();
+          }
+          await page.getByRole('button', { name: '예', exact: true }).click();
+          await expect(page.getByRole('heading', { name: '출전 확정', exact: true })).toBeVisible();
         }
-        await page.getByRole('button', { name: '예', exact: true }).click();
-        await expect(page.getByRole('heading', { name: '출전 확정', exact: true })).toBeVisible();
+        await expect(host.locator('.liar-contestant strong')).toHaveText(['A', 'B', 'C', 'D'].map(team => `${team}선수1`));
+        await host.screenshot({ path: '.cache/screenshots/liar-selection.png' });
       }
-      await expect(host.locator('.liar-contestant strong')).toHaveText(['A', 'B', 'C', 'D'].map(team => `${team}선수${index + 1}`));
-      if (index === 0) await host.screenshot({ path: '.cache/screenshots/liar-selection.png' });
       await next();
+      await expect(host.locator('.presentation-screen-code')).toHaveText(String(40 + index * 3));
+      const entries = await host.evaluate(async index => {
+        const api = await import('/src/event-data.js'); await api.connect();
+        const game = await api.read(localStorage.getItem('martini.host-room'), 'liarGame');
+        return Object.values(game.rounds[index].contestants).map(person => ({ id: person.participantId, roundId: person.roundId }));
+      }, index);
+      expect(entries.map(person => person.id).sort()).toEqual(['A1', 'B1', 'C1', 'D1']);
+      expect(new Set(entries.map(person => person.roundId)).size).toBe(1);
       await expect(host.locator('.liar-screen h1')).toHaveText(['술', '디저트', '직업'][index]);
+      await expect(host.locator('.liar-topic-label')).toHaveText('주제');
+      await expect(host.locator('.liar-contestants, .liar-status')).toHaveCount(0);
       await remote.getByRole('button', { name: '단어 전달', exact: true }).click();
       for (const page of players) await expect(page.locator('.liar-word')).toBeVisible();
       const words = await Promise.all(players.map(page => page.locator('.liar-word h1').textContent()));
-      expect(words.filter(word => word === '')).toHaveLength(1);
-      expect(words.filter(Boolean)).toEqual(Array(3).fill(['막걸리', '한정선 과일모찌', '대통령'][index]));
-      const liar = words.indexOf('');
-      const liarId = `${['A', 'B', 'C', 'D'][liar]}${index + 1}`;
+      expect(words.filter(word => word === '라이어')).toHaveLength(1);
+      expect(words.filter(word => word !== '라이어')).toEqual(Array(3).fill(['막걸리', '한정선 과일모찌', '대통령'][index]));
+      const liar = words.indexOf('라이어');
+      if (index === 0) {
+        await host.screenshot({ path: '.cache/screenshots/liar-topic.png' });
+        await players[liar].screenshot({ path: '.cache/screenshots/liar-role.png' });
+      }
+      const liarId = `${['A', 'B', 'C', 'D'][liar]}1`;
       await remote.getByRole('button', { name: '투표', exact: true }).click();
       for (const page of players) await expect(page.locator('[data-liar-vote]')).toHaveCount(0);
       await expect(spectators[0].locator('[data-liar-vote]')).toHaveCount(4);
-      const target = index === 1 ? `${['A', 'B', 'C', 'D'][(liar + 1) % 4]}${index + 1}` : liarId;
+      const target = index === 1 ? `${['A', 'B', 'C', 'D'][(liar + 1) % 4]}1` : liarId;
       await spectators[0].locator(`[data-liar-vote="${target}"]`).click();
-      if (index === 2) await spectators[1].locator(`[data-liar-vote="${['A', 'B', 'C', 'D'][(liar + 1) % 4]}3"]`).click();
+      if (index === 2) await spectators[1].locator(`[data-liar-vote="${['A', 'B', 'C', 'D'][(liar + 1) % 4]}1"]`).click();
       await expect(spectators[0].getByRole('heading', { name: '투표 완료', exact: true })).toBeVisible();
       await remote.getByRole('button', { name: '투표 종료', exact: true }).click();
       await expect(host.locator('.presentation-screen-code')).toHaveText(String(40 + index * 3));

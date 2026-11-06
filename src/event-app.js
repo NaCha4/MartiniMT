@@ -244,7 +244,7 @@ function nextBlocked() {
   if (slide.game === 'liar') {
     const round = game.rounds?.[slide.questionIndex];
     if (slide.view === 'intro') return !liarRosterReady(game.roster ?? state.participants);
-    if (slide.view === 'select') return !Object.keys(round?.contestants ?? {}).length;
+    if (slide.view === 'select') return slide.questionIndex === 0 && !Object.keys(round?.contestants ?? {}).length;
     if (slide.view === 'play') return !liarRevealFinished(round, Date.now() + state.serverOffset);
     return stageIndex(state.slideIndex, 1) === state.slideIndex;
   }
@@ -655,7 +655,7 @@ async function moveTo(index, { skipGame = false } = {}) {
       if (slide.view === 'select') state.stopwatchGame = await api.prepareStopwatch(state.room, state.participants, resetAt);
       if (slide.view === 'score') state.teamScores = await api.awardStopwatchPoints(state.room);
     } else if (key === 'liar') {
-      if (slide.view === 'select') state.liarGame = await api.prepareLiarRound(state.room, state.participants, slide.questionIndex, resetAt);
+      if (slide.view === 'select' || slide.view === 'play') state.liarGame = await api.prepareLiarRound(state.room, state.participants, slide.questionIndex, resetAt);
       if (slide.view === 'score') state.teamScores = await api.awardLiarPoints(state.room, slide.questionIndex, Date.now() + state.serverOffset);
     } else if (key === 'zoom') {
       if (slide.view === 'question') state.zoomGame = await api.prepareZoomQuestion(state.room, state.participants, state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, slide.questionIndex, resetAt);
