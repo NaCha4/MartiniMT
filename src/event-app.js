@@ -265,6 +265,9 @@ function tasteContext(index = state.presentation?.slideIndex ?? state.slideIndex
   const key = slide?.game ?? 'whisky';
   return { key, slide, game: key === 'ox' ? state.oxGame : key === 'zoom' ? state.zoomGame : key === 'liar' ? state.liarGame : key === 'stopwatch' ? state.stopwatchGame : key === 'number' ? state.numberGame : key === 'memory' ? state.memoryGame : key === 'reaction' ? state.reactionGame : key === 'yut' ? state.yutGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
 }
+function hostYutNavigationLocked() {
+  return state.role === 'host' && state.presenting && STAGES[state.slideIndex]?.game === 'yut';
+}
 function nextBlocked() {
   const { slide, game } = tasteContext(state.slideIndex);
   if (slide.game === 'yut') return slide.view === 'play' ? !game?.result : stageIndex(state.slideIndex, 1) === state.slideIndex;
@@ -527,7 +530,7 @@ function presentationView() {
   const slide = STAGES[state.slideIndex];
   const resetControl = `<button class="button outline presentation-reset" data-action="reset" data-no-slide title="진행·투표·점수를 초기화하고 1번 화면으로 돌아갑니다" ${state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}>초기화</button>`;
   const gameStarts = ['touch', 'taste-intro', 'soju-vote', 'military-vote', 'ox-intro', 'zoom-intro', 'liar-intro', 'stopwatch-intro', 'number-intro', 'memory-intro', 'reaction-intro', 'yut-intro'];
-  const debugControls = `<nav class="presentation-debug-tools" data-no-slide aria-label="디버깅 이동">${resetControl}<select id="debug-game-jump" aria-label="게임 바로가기" title="선택한 게임의 시작 화면으로 이동합니다" ${state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}><option value="">게임 바로가기</option>${STAGES.map((stage, index) => gameStarts.includes(stage.id) ? `<option value="${index}">${stage.title}</option>` : '').join('')}</select></nav>`;
+  const debugControls = `<nav class="presentation-debug-tools" data-no-slide aria-label="디버깅 이동">${resetControl}<select id="debug-game-jump" aria-label="게임 바로가기" title="선택한 게임의 시작 화면으로 이동합니다" ${slide.game === 'yut' || state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}><option value="">게임 바로가기</option>${STAGES.map((stage, index) => gameStarts.includes(stage.id) ? `<option value="${index}">${stage.title}</option>` : '').join('')}</select></nav>`;
   const screenCode = state.winner ? slide.resultScreenCode ?? slide.screenCode : slide.screenCode;
   const screenLabel = import.meta.env.DEV ? `<span class="presentation-screen-code" aria-hidden="true">${screenCode}</span>` : '';
   const winnerElapsed = state.winner ? Math.max(0, performance.now() - state.winnerRevealedAt) : 0;
@@ -556,7 +559,7 @@ function presentationView() {
       <div class="race-copy">${message}</div>
     </section>`;
   }
-  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${debugControls}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
+  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="${slide.game === 'yut' ? '윷놀이 화면. 화면 이동은 리모컨을 사용하세요.' : '발표 화면. 좌클릭 다음, 우클릭 이전'}" tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${debugControls}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
 }
 
 function participantTasteView() {
@@ -815,7 +818,7 @@ async function moveTo(index, { skipGame = false } = {}) {
   schedule();
 }
 async function advance(direction, { skipGame = false } = {}) {
-  if (!state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden) return;
+  if (!state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden || hostYutNavigationLocked()) return;
   const directNavigation = skipGame && state.role === 'host';
   const next = stageIndex(state.slideIndex, direction);
   if (next === state.slideIndex) return;
@@ -1284,7 +1287,7 @@ function bindEvents() {
     const index = Number(value);
     gameJump.blur();
     if (value === '' || !Number.isInteger(index) || !STAGES[index]
-      || state.role !== 'host' || !state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden) return;
+      || state.role !== 'host' || !state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden || hostYutNavigationLocked()) return;
     lockControls();
     state.busy = true;
     try { await moveTo(index); }
@@ -1687,12 +1690,16 @@ document.addEventListener('contextmenu', event => {
     return;
   }
   event.preventDefault();
-  if (controlTarget(event.target)) return;
+  if (hostYutNavigationLocked() || controlTarget(event.target)) return;
   if (state.slideIndex === 0) void action('exit');
   else void advance(-1);
 });
 document.addEventListener('keydown', event => {
   if (state.role !== 'host' || !state.presenting) return;
+  if (hostYutNavigationLocked()) {
+    if (['Escape', 'ArrowRight', 'ArrowLeft', 'PageUp', 'PageDown', ' '].includes(event.key)) event.preventDefault();
+    return;
+  }
   if (event.repeat && ['Escape', 'ArrowRight', 'ArrowLeft', 'PageUp', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); return; }
   if (event.key === 'Escape' && !document.fullscreenElement) { event.preventDefault(); void action('exit'); }
   else if (!controlTarget(event.target) && ['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); void advance(1); }

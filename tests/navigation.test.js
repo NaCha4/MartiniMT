@@ -25,11 +25,13 @@ function presentation(slideIndex = 3) {
     state, STAGES, stageIndex, OX_REVEAL_DURATION, oxQuestionsReady, oxSurvivorRevealEnd, revealFinished,
     document, Element, window: { getSelection: () => selection },
     schedule() {}, chooseWinner() {}, showError: error => errors.push(error),
+    action: name => calls.push(['action', name]),
     lockControls() { state.controlsLocked = true; },
     api: {
       async setPresentationSlide(...args) { calls.push(['slide', ...args]); },
       async ensureTasteGame(...args) { calls.push(['prepare-taste', ...args]); return { control: { phase: 'ready' } }; },
       async prepareOxQuestion() { throw new Error('OX question preparation requires game state'); },
+      async prepareYutGame(...args) { calls.push(['prepare-yut', ...args]); return { control: { phase: 'playing' } }; },
       async awardTastePoints() { throw new Error('Taste scoring requires results'); },
       async awardOxPoints() { throw new Error('OX scoring requires results'); },
       startTouchRound() { throw new Error('Touch round preparation was not expected'); },
@@ -38,7 +40,7 @@ function presentation(slideIndex = 3) {
   vm.runInContext(
     source.slice(source.indexOf('function tasteContext('), source.indexOf('function tasteControls('))
     + source.slice(source.indexOf('async function moveTo('), source.indexOf('async function tap('))
-    + source.slice(source.indexOf('const controlTarget ='), source.indexOf("document.addEventListener('contextmenu'")),
+    + source.slice(source.indexOf('const controlTarget ='), source.indexOf('async function start()')),
     context,
   );
   return {
@@ -48,15 +50,24 @@ function presentation(slideIndex = 3) {
       await new Promise(resolve => setImmediate(resolve));
     },
     advance: (options) => context.advance(1, options),
+    async keydown(key) {
+      listeners.get('keydown')({ key, repeat: false, target: new Element(), preventDefault() {} });
+      await new Promise(resolve => setImmediate(resolve));
+    },
+    async rightClick() {
+      listeners.get('contextmenu')({ target: new Element(), preventDefault() {} });
+      await new Promise(resolve => setImmediate(resolve));
+    },
     control: new Element(true),
     select(text) { selection = text; },
   };
 }
 
-test('direct host clicks traverse every presentation screen without votes, questions or scoring', async () => {
+test('direct host clicks traverse earlier games and stop when yut begins', async () => {
   const screen = presentation(0);
   const visited = [0];
   for (let count = 0; count < STAGES.length; count++) {
+    if (STAGES[screen.state.slideIndex].game === 'yut') break;
     const next = stageIndex(screen.state.slideIndex, 1);
     if (next === screen.state.slideIndex) break;
     screen.state.controlsLocked = false;
@@ -64,7 +75,7 @@ test('direct host clicks traverse every presentation screen without votes, quest
     assert.equal(screen.state.slideIndex, next);
     visited.push(next);
   }
-  assert.equal(STAGES[visited.at(-1)].id, 'award-4');
+  assert.equal(STAGES[visited.at(-1)].id, 'yut-intro');
   assert.ok(visited.some(index => STAGES[index].view === 'survivors'));
   assert.equal(screen.calls.length, visited.length - 1);
   assert.ok(screen.calls.every(([method, room, , resetAt]) => method === 'slide' && room === 'test-room' && resetAt === 123));
@@ -72,6 +83,25 @@ test('direct host clicks traverse every presentation screen without votes, quest
   screen.state.controlsLocked = false;
   await screen.click();
   assert.equal(screen.calls.length, visited.length - 1);
+});
+
+test('yut ignores host clicks, context menus, keys and direct advances while its remote still advances', async () => {
+  for (const [index, stage] of STAGES.entries()) {
+    if (stage.game !== 'yut') continue;
+    const screen = presentation(index);
+    await screen.click();
+    await screen.rightClick();
+    for (const key of ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' ', 'Escape']) await screen.keydown(key);
+    await screen.advance({ skipGame: true });
+    assert.equal(screen.state.slideIndex, index, stage.id);
+    assert.deepEqual(screen.calls, [], stage.id);
+  }
+  const index = STAGES.findIndex(stage => stage.id === 'yut-intro');
+  const remote = presentation(index);
+  remote.state.role = 'manager';
+  await remote.advance();
+  assert.equal(STAGES[remote.state.slideIndex].id, 'yut-board');
+  assert.deepEqual(remote.calls.map(([method]) => method), ['prepare-yut', 'slide']);
 });
 
 test('direct host clicks bypass missing results and unfinished reveal animations', async () => {

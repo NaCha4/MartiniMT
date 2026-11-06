@@ -26,8 +26,16 @@ test('yut dragging, stacking, capture, reload, one-time scoring and all four awa
     const index = await host.evaluate(async () => (await import('/src/event-model.js')).STAGES.findIndex(stage => stage.id === 'yut-intro'));
     await host.locator('#debug-game-jump').selectOption(String(index));
     await expect(host.locator('.yut-intro')).toBeVisible();
+    await expect(host.locator('#debug-game-jump')).toBeDisabled();
+    await host.locator('.yut-intro h1').click();
+    await host.locator('.yut-intro h1').click({ button: 'right' });
+    for (const key of ['ArrowRight', 'PageDown', ' ', 'ArrowLeft', 'PageUp', 'Escape']) await host.keyboard.press(key);
+    await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'yut-intro');
     await remote.getByRole('button', { name: '다음 화면', exact: true }).click();
     await expect(host.locator('[data-yut-piece]')).toHaveCount(16);
+    await host.locator('.presentation').click({ position: { x: 4, y: 80 } });
+    await host.keyboard.press('ArrowRight');
+    await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'yut-board');
     for (const viewport of [{ width: 1440, height: 960 }, { width: 1280, height: 720 }]) {
       await host.setViewportSize(viewport);
       await expect.poll(() => host.locator('.yut-surface').evaluate(element => {
