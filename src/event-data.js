@@ -71,10 +71,10 @@ export function reportOperatorError(room, message) {
 export function clearOperatorError(room, id) {
   return runTransaction(locationRef(room, 'operatorError'), current => current?.id === id ? null : undefined, { applyLocally: false });
 }
-export function resetPresentation(room) {
+export function resetPresentation(room, active = true) {
   const changes = {
-    stage: { step: 'join', updatedAt: serverTimestamp() },
-    presentation: { active: true, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() },
+    stage: { step: active ? 'join' : 'setup', updatedAt: serverTimestamp() },
+    presentation: { active, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() },
     instructions: null,
     responses: null,
     teamScores: null,

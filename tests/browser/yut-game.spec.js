@@ -24,9 +24,15 @@ test('yut dragging, stacking, capture, reload, one-time scoring and all four awa
     await remote.getByRole('button', { name: '입장', exact: true }).click();
     await expect(remote.locator('.manager-controller')).toBeVisible();
     const index = await host.evaluate(async () => (await import('/src/event-model.js')).STAGES.findIndex(stage => stage.id === 'yut-intro'));
-    await host.locator('#debug-game-jump').selectOption(String(index));
+    await host.evaluate(async index => {
+      const api = await import('/src/event-data.js');
+      const room = localStorage.getItem('martini.host-room');
+      const presentation = await api.read(room, 'presentation');
+      await api.setPresentationSlide(room, index, presentation.resetAt ?? null);
+    }, index);
     await expect(host.locator('.yut-intro')).toBeVisible();
-    await expect(host.locator('#debug-game-jump')).toBeDisabled();
+    await expect(host.locator('#debug-game-jump')).toHaveCount(0);
+    await expect(host.getByRole('button', { name: '초기화', exact: true })).toHaveCount(0);
     await host.locator('.yut-intro h1').click();
     await host.locator('.yut-intro h1').click({ button: 'right' });
     for (const key of ['ArrowRight', 'PageDown', ' ', 'ArrowLeft', 'PageUp', 'Escape']) await host.keyboard.press(key);
@@ -116,9 +122,12 @@ test('yut dragging, stacking, capture, reload, one-time scoring and all four awa
     const totals = await host.evaluate(async () => (await import('/src/event-data.js')).read(localStorage.getItem('martini.host-room'), 'teamScores'));
     expect(totals.totals).toEqual({ A: 350, B: 200, C: 400, D: 50 });
     expect(Object.keys(totals.awards)).toHaveLength(2);
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();
-    await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
+    await expect(host.locator('.dashboard')).toBeVisible();
     expect(await host.evaluate(async () => (await import('/src/event-data.js')).read(localStorage.getItem('martini.host-room'), 'yutGame'))).toBeNull();
+    expect(await host.evaluate(async () => (await import('/src/event-data.js')).read(localStorage.getItem('martini.host-room'), 'presentation/active'))).toBe(false);
     expect(errors).toEqual([]);
   } finally {
     await Promise.all([desktop.close(), phone.close()]);

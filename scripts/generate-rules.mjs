@@ -567,7 +567,7 @@ const session = {
   },
   presentation: {
     '.read': 'auth != null', '.write': controller,
-    '.validate': `newData.hasChildren(['active','slideIndex','updatedAt']) && (newData.child('resetAt').val() === data.child('resetAt').val() || ((${owner}) && newData.child('active').val() === true && newData.child('slideIndex').val() === 0 && newData.child('resetAt').val() === now && !newData.child('roundId').exists() && !newData.child('winnerId').exists()))`,
+    '.validate': `newData.hasChildren(['active','slideIndex','updatedAt']) && (newData.child('resetAt').val() === data.child('resetAt').val() || ((${owner}) && (newData.child('active').val() === true || newData.parent().child('stage/step').val() === 'setup') && newData.child('slideIndex').val() === 0 && newData.child('resetAt').val() === now && !newData.child('roundId').exists() && !newData.child('winnerId').exists()))`,
     active: { '.validate': 'newData.isBoolean()' },
     slideIndex: { '.validate': `newData.isNumber() && newData.val() >= 0 && newData.val() <= ${STAGES.length - 1} && newData.val() % 1 === 0` },
     roundId: text(20), resetAt: storedTimestamp,

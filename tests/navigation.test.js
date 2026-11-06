@@ -40,13 +40,13 @@ function presentation(slideIndex = 3) {
   vm.runInContext(
     source.slice(source.indexOf('function tasteContext('), source.indexOf('function tasteControls('))
     + source.slice(source.indexOf('async function moveTo('), source.indexOf('async function tap('))
-    + source.slice(source.indexOf('const controlTarget ='), source.indexOf('async function start()')),
+    + source.slice(source.indexOf("document.addEventListener('contextmenu'"), source.indexOf('async function start()')),
     context,
   );
   return {
     state, calls, errors, document,
     async click(overrides = {}) {
-      listeners.get('click')({ target: new Element(), button: 0, detail: 1, ...overrides });
+      listeners.get('click')?.({ target: new Element(), button: 0, detail: 1, ...overrides });
       await new Promise(resolve => setImmediate(resolve));
     },
     advance: (options) => context.advance(1, options),
@@ -63,26 +63,16 @@ function presentation(slideIndex = 3) {
   };
 }
 
-test('direct host clicks traverse earlier games and stop when yut begins', async () => {
-  const screen = presentation(0);
-  const visited = [0];
-  for (let count = 0; count < STAGES.length; count++) {
-    if (STAGES[screen.state.slideIndex].game === 'yut') break;
-    const next = stageIndex(screen.state.slideIndex, 1);
-    if (next === screen.state.slideIndex) break;
-    screen.state.controlsLocked = false;
+test('all presentation screens ignore host clicks, right-clicks, keys and direct navigation', async () => {
+  for (const [index, stage] of STAGES.entries()) {
+    const screen = presentation(index);
     await screen.click();
-    assert.equal(screen.state.slideIndex, next);
-    visited.push(next);
+    await screen.rightClick();
+    for (const key of ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' ', 'Escape']) await screen.keydown(key);
+    await screen.advance();
+    assert.equal(screen.state.slideIndex, index, stage.id);
+    assert.deepEqual(screen.calls, [], stage.id);
   }
-  assert.equal(STAGES[visited.at(-1)].id, 'yut-intro');
-  assert.ok(visited.some(index => STAGES[index].view === 'survivors'));
-  assert.equal(screen.calls.length, visited.length - 1);
-  assert.ok(screen.calls.every(([method, room, , resetAt]) => method === 'slide' && room === 'test-room' && resetAt === 123));
-  assert.deepEqual(screen.errors, []);
-  screen.state.controlsLocked = false;
-  await screen.click();
-  assert.equal(screen.calls.length, visited.length - 1);
 });
 
 test('yut ignores host clicks, context menus, keys and direct advances while its remote still advances', async () => {
@@ -102,20 +92,6 @@ test('yut ignores host clicks, context menus, keys and direct advances while its
   await remote.advance();
   assert.equal(STAGES[remote.state.slideIndex].id, 'yut-board');
   assert.deepEqual(remote.calls.map(([method]) => method), ['prepare-yut', 'slide']);
-});
-
-test('direct host clicks bypass missing results and unfinished reveal animations', async () => {
-  for (const id of ['taste-vote', 'taste-reveal', 'soju-reveal', 'military-reveal', 'ox-intro', 'ox-question-1', 'ox-survivors-1', 'ox-survivors-5']) {
-    const index = STAGES.findIndex(stage => stage.id === id);
-    const screen = presentation(index);
-    const slide = STAGES[index];
-    const result = { revealedAt: Date.now() + 1000, survivorsRevealedAt: Date.now() + 1000, order: { A1: 0 } };
-    if (slide.view === 'reveal') screen.state.tasteGames[slide.game] = { control: { phase: 'revealed' }, result };
-    if (slide.game === 'ox' && slide.view !== 'intro') screen.state.oxGame = { rounds: { [slide.questionIndex]: { result } } };
-    await screen.click();
-    assert.equal(screen.state.slideIndex, stageIndex(index, 1), id);
-    assert.deepEqual(screen.errors, []);
-  }
 });
 
 test('remote navigation still waits for votes and prepares the next game screen', async () => {

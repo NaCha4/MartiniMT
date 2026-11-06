@@ -70,11 +70,8 @@ test('local presentation errors stay dismissible and remote dismissal preserves 
   }
 });
 
-async function clickSlide(page, button = 'left') {
-  const slide = page.locator('.presentation');
-  await expect(slide).toHaveAttribute('aria-busy', 'false');
-  if (button === 'right') await slide.click({ button, position: { x: 16, y: 16 } });
-  else await page.keyboard.press('ArrowRight');
+async function advanceSlide(remote, direction = 'next') {
+  await remote.getByRole('button', { name: direction === 'previous' ? '이전 화면' : '다음 화면', exact: true }).click();
 }
 
 test('Chrome mobile emulation keeps participants and the manager in windowed mode', async ({ browser }) => {
@@ -130,6 +127,9 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
   const desktop = await browser.newContext({ viewport: { width: 1366, height: 768 }, screen: { width: 1920, height: 1080 } });
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const second = await browser.newContext({ viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
+  const controller = await browser.newContext({ viewport: { width: 900, height: 420 }, isMobile: true, hasTouch: true });
+  await controller.addInitScript(() => Object.defineProperty(document, 'fullscreenEnabled', { get: () => false }));
+  const remote = await controller.newPage();
   const host = await desktop.newPage(), alice = await mobile.newPage(), bob = await second.newPage();
   await mobile.addInitScript(() => {
     Object.defineProperty(navigator, 'platform', { get: () => 'Linux armv8l' });
@@ -140,7 +140,7 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     Object.defineProperty(document, 'fullscreenEnabled', { get: () => false });
   });
   const errors = [];
-  for (const page of [host, alice, bob]) page.on('pageerror', error => errors.push(error.message));
+  for (const page of [host, alice, bob, remote]) page.on('pageerror', error => errors.push(error.message));
   try {
     await host.goto('/');
     await expect(host.locator('.connection')).toContainText('로컬 테스트');
@@ -150,6 +150,7 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await expect(host.locator('.team-heading h3')).toHaveText(['1조', '2조', '3조', '4조']);
     for (const team of ['A', 'B', 'C', 'D']) for (let number = 1; number <= 6; number++) await host.locator(`#name-${team}${number}`).fill(`${team}참가자${number}`);
     await host.locator('#name-A1').fill('김지민'); await host.locator('#name-A2').fill('이서연');
+    await host.locator('#manager-name').fill('이동진행자');
     await host.getByRole('button', { name: '발표 시작' }).click();
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
     await expect(host.locator('.presentation-screen-code')).toHaveText('1');
@@ -162,6 +163,10 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await expect(host.locator('.synapse-link')).toHaveCount(24);
     await expect(host.locator('.stage-team-name')).toHaveText(['1조', '2조', '3조', '4조']);
     const invite = await host.locator('#invite-url').inputValue();
+    await remote.goto(invite);
+    await remote.locator('#real-name').fill('이동진행자');
+    await remote.getByRole('button', { name: '입장', exact: true }).click();
+    await expect(remote.locator('.manager-controller')).toBeVisible();
     expect(await host.evaluate(() => document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const qr = await host.locator('.qr-paper').boundingBox();
     expect(qr.y + qr.height).toBeLessThanOrEqual(768);
@@ -226,7 +231,12 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await expect(host.locator('.arrival-heading strong')).toHaveText('2');
     await host.screenshot({ path: '.cache/screenshots/presentation-qr.png', fullPage: true });
     await alice.screenshot({ path: '.cache/screenshots/mobile-wait.png', fullPage: true });
-    await clickSlide(host);
+    await host.locator('.presentation').click({ position: { x: 16, y: 16 } });
+    await host.locator('.presentation').click({ button: 'right', position: { x: 16, y: 16 } });
+    for (const key of ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' ', 'Escape']) await host.keyboard.press(key);
+    await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
+    await expect(host.locator('#debug-game-jump, [data-action="reset"]')).toHaveCount(0);
+    await advanceSlide(remote);
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'touch');
     await expect(host.locator('.presentation-screen-code')).toHaveText('2');
     await expect(alice.locator('.presentation-screen-code')).toHaveCount(0);
@@ -254,7 +264,7 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await expect(bob.getByRole('heading', { name: '마감되었습니다' })).toBeVisible();
     await expect(host.locator('.winner-slide .race-copy')).toHaveText(/^\s*김지민\s*1조\s*$/);
     await expect(host.locator('.presentation-screen-code')).toHaveText('3');
-    await expect(host.locator('.presentation button')).toHaveText(['초기화']);
+    await expect(host.locator('.presentation button')).toHaveCount(0);
     await alice.screenshot({ path: '.cache/screenshots/mobile-winner.png', fullPage: true });
     await bob.screenshot({ path: '.cache/screenshots/mobile-closed.png', fullPage: true });
     await host.screenshot({ path: '.cache/screenshots/presentation-winner.png', fullPage: true });
@@ -263,11 +273,11 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await expect(alice.getByRole('heading', { name: '가장 먼저 터치했습니다!' })).toBeVisible();
     await expect(alice.locator('#tap-target')).toHaveCount(0);
 
-    await clickSlide(host, 'right');
+    await advanceSlide(remote, 'previous');
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
     await expect(alice.getByRole('heading', { name: '대기 중' })).toBeVisible();
     await expect(host.locator('.arrival-heading strong')).toHaveText('2');
-    await clickSlide(host);
+    await advanceSlide(remote);
     await expect(bob.locator('#tap-target')).toBeEnabled();
     await expect(host.locator('#winner-name')).toHaveCount(0);
     await bob.locator('#tap-target').tap();
@@ -275,9 +285,9 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await expect(alice.locator('#tap-target')).toHaveCount(0);
     await expect(bob.getByRole('heading', { name: '가장 먼저 터치했습니다!' })).toBeVisible();
     await expect(alice.getByRole('heading', { name: '마감되었습니다' })).toBeVisible();
-    await clickSlide(host, 'right');
+    await advanceSlide(remote, 'previous');
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
-    await clickSlide(host);
+    await advanceSlide(remote);
     await expect(alice.locator('#tap-target')).toBeEnabled();
     await expect(bob.locator('#tap-target')).toBeEnabled();
     const fireAt = Date.now() + 500;
@@ -296,12 +306,14 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     expect(outcomes.sort()).toEqual(['closed', 'winner']);
     await expect(alice.locator('[role="alert"]')).toHaveCount(0);
     await expect(bob.locator('[role="alert"]')).toHaveCount(0);
-    await clickSlide(host, 'right');
+    await advanceSlide(remote, 'previous');
     await host.locator('.presentation').click({ button: 'right', position: { x: 16, y: 16 } });
     await expect(host.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
     await expect(host.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
     await host.locator('.invite-qr').click({ button: 'right' });
+    await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
     await expect(host.getByRole('button', { name: '발표 시작' })).toBeVisible();
     await expect(host.locator('#name-A1')).toHaveValue('김지민');
     await expect(host.locator('#total-count')).toHaveText('24');
@@ -309,9 +321,11 @@ test('presentation navigation, live check-in, fullscreen and first-touch race', 
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
     await expect(host.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
     await host.keyboard.press('Escape');
+    await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
     await expect(host.getByRole('button', { name: '발표 시작' })).toBeVisible();
     expect(errors).toEqual([]);
-  } finally { await Promise.all([desktop.close(), mobile.close(), second.close()]); }
+  } finally { await Promise.all([desktop.close(), mobile.close(), second.close(), controller.close()]); }
 });
 
 test('rosters auto-save to Firebase and restore drafts when the local room is missing', async ({ page }) => {
@@ -347,7 +361,12 @@ test('rosters auto-save to Firebase and restore drafts when the local room is mi
   await expect(page.locator('.stage-team-name')).toHaveText(['1조', '2조', '3조', '4조']);
 
   await expect(page.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
-  await page.keyboard.press('Escape');
+  await page.evaluate(async () => {
+    const api = await import('/src/event-data.js');
+    const room = localStorage.getItem('martini.host-room');
+    const presentation = await api.read(room, 'presentation');
+    await api.setPresentation(room, false, presentation.resetAt ?? null);
+  });
   await page.locator('#name-A1').fill('');
   await page.reload();
   await expect(page.getByRole('button', { name: '발표 시작' })).toBeEnabled();
@@ -408,14 +427,14 @@ test('manager controls fit one rotated portrait panel in landscape fullscreen', 
       if (page === remote) await page.getByRole('button', { name: '전체화면으로 시작' }).click();
     }
     await expect(remote.locator('.manager-controller')).toBeVisible();
-    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면']);
+    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면', '설정']);
     await expect(remote.locator('.manager-header, .remote-actions')).toHaveCount(0);
     await expect(remote.locator('.remote-status, .remote-attendance')).toHaveCount(0);
     await expect.poll(() => remote.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
     await remote.reload();
     await remote.getByRole('button', { name: '전체화면으로 시작' }).click();
     await expect(remote.locator('.manager-controller')).toBeVisible();
-    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면']);
+    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면', '설정']);
     await expect(remote.getByRole('region', { name: '진행 대본' })).toHaveText('레크레이션은 모바일기기와 웹을 이용해서 진행합니다. QR코드를 통해 휴대폰을 웹과 동기화하면 모든걸 실시간으로 처리할 수 있습니다. 특히 선착순 게임에서 매우 공정하게 처리할 수 있는데요, 저요저요 하면서 손 들면 레크 진행자가 무작위로 뽑는 방식이 아닌, 정말로 가장 빠르게 누른 사람을 골라낼 수 있습니다. 이렇게 말이죠');
     const scriptSize = await remote.locator('#manager-script').evaluate(element => ({
       ratio: element.offsetHeight / element.parentElement.clientHeight,
@@ -510,7 +529,7 @@ test('manager controls fit one rotated portrait panel in landscape fullscreen', 
     await expect(participant.getByRole('heading', { name: '대기 중' })).toBeVisible();
     await remote.getByRole('button', { name: '이전 화면' }).click();
     await expect(host.locator('#manager-name')).toHaveValue('진행자');
-    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면']);
+    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면', '설정']);
     await expect(remote.getByRole('button', { name: '이전 화면' })).toBeDisabled();
     await expect(remote.getByRole('button', { name: '다음 화면' })).toBeDisabled();
     await expect(remote.getByRole('region', { name: '진행 대본' })).toHaveText('');
@@ -525,7 +544,7 @@ test('manager controls fit one rotated portrait panel in landscape fullscreen', 
     await expect(remote.locator('#manager-script p')).toHaveJSProperty('textContent', touchScript);
     await expect(remote.locator('#manager-script p')).toHaveCSS('white-space', 'pre-line');
     await expect(remote.locator('.manager-header, .remote-actions')).toHaveCount(0);
-    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면']);
+    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면', '설정']);
     expect(await remoteLayout()).toEqual(qrLayout);
     await expect(participant.locator('#tap-target')).toBeEnabled();
     await participant.locator('#tap-target').tap();
@@ -534,7 +553,7 @@ test('manager controls fit one rotated portrait panel in landscape fullscreen', 
     await expect(remote.getByRole('region', { name: '진행 대본' })).toHaveText(touchScript);
     await expect(remote.locator('#manager-script')).toHaveAttribute('data-script-id', 'touch');
     await expect(remote.getByText('김지민', { exact: true })).toHaveCount(0);
-    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면']);
+    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면', '설정']);
     expect(await remoteLayout()).toEqual(qrLayout);
     await remote.getByRole('button', { name: '이전 화면' }).click();
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
@@ -546,7 +565,7 @@ test('manager controls fit one rotated portrait panel in landscape fullscreen', 
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
     await expect(remote.locator('.manager-controller')).toHaveAttribute('aria-busy', 'false');
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
-    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면']);
+    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면', '설정']);
     await remote.getByRole('button', { name: '다음 화면' }).click();
     await expect(participant.locator('#tap-target')).toBeEnabled();
     await participant.locator('#tap-target').tap();
@@ -596,7 +615,7 @@ test('manager controls fit one rotated portrait panel in landscape fullscreen', 
     await expect(participant.locator('#real-name')).toBeVisible();
     await host.getByRole('button', { name: '발표 시작', exact: true }).click();
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
-    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면']);
+    await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면', '설정']);
     await remote.getByRole('button', { name: '이전 화면' }).click();
     await expect(host.getByRole('button', { name: '발표 시작', exact: true })).toBeEnabled();
     await host.getByRole('button', { name: '관리자 휴대폰 연결 해제' }).click();

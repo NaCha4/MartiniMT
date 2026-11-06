@@ -393,6 +393,19 @@ test('a registered name lookup works but the full roster and index remain privat
   await assertFails(get(location(db('visitor'), 'nameIndex')));
   await assertFails(get(location(db('visitor'), 'participants/A1')));
 });
+
+test('the owner can atomically reset while keeping the settings screen open', async () => {
+  await create();
+  const reset = {
+    stage: { step: 'setup', updatedAt: serverTimestamp() },
+    presentation: { active: false, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() },
+    teamScores: null,
+  };
+  await assertFails(update(location(db('visitor')), reset));
+  await assertSucceeds(update(location(db('host')), reset));
+  assert.equal((await get(location(db('host'), 'presentation/active'))).val(), false);
+  assert.equal((await get(location(db('host'), 'stage/step'))).val(), 'setup');
+});
 test('claim is atomic, one device per person, and one person per identity', async () => {
   await create();
   await assertFails(set(location(db('alice'), 'bindings/A1'), { uid: 'alice', claimedAt: serverTimestamp() }));

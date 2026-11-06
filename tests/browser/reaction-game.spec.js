@@ -86,8 +86,10 @@ test('reaction compares local durations despite delayed signals and keeps scores
       return api.read(room, 'teamScores/totals');
     });
     expect(scores).toEqual({ A: 0, B: 100, C: 0, D: 0 });
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();
-    await expect(host.locator('.presentation-screen-code')).toHaveText('1');
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.evaluate(async () => {
       const api = await import('/src/event-data.js'); await api.connect();
       const { STAGES } = await import('/src/event-model.js');
@@ -175,8 +177,10 @@ test('early touches remain disqualified after a delayed upload and all false sta
     await next();
     await expect(host.locator('[data-score-team="A"]')).toHaveText('0');
     await expect(host.locator('[data-score-team="B"]')).toHaveText('100');
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();
-    await expect(host.locator('.presentation-screen-code')).toHaveText('1');
+    await expect(host.locator('.dashboard')).toBeVisible();
     await recruit();
     for (const page of [first, second]) await page.getByRole('button', { name: /터치를 기다리세요/ }).click();
     await expect(host.locator('.reaction-results [data-team="A"]')).toContainText('실격');

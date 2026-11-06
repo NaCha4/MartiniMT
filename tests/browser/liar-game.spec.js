@@ -65,8 +65,10 @@ for (const count of [1, 2, 3]) test(`${count} fixed entrants finish all three li
       await expect(host.locator('.liar-badge')).toHaveCount(1);
       await expect(host.locator('.presentation-screen-code')).toHaveText(String(41 + index * 3));
     }
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();
-    await expect(host.locator('.presentation-screen-code')).toHaveText('1');
+    await expect(host.locator('.dashboard')).toBeVisible();
   } finally { await Promise.all(contexts.map(context => context.close())); }
 });
 
@@ -202,8 +204,10 @@ test('three liar rounds retain the initial entrants, redraw private roles and aw
       }
     }
     await expect(host.locator('.presentation-screen-code')).toHaveText('47');
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();
-    await expect(host.locator('.presentation-screen-code')).toHaveText('1');
+    await expect(host.locator('.dashboard')).toBeVisible();
     expect(await host.evaluate(async () => { const api = await import('/src/event-data.js'); await api.connect(); return api.read(localStorage.getItem('martini.host-room'), 'liarGame'); })).toBeNull();
     expect(errors).toEqual([]);
   } finally { await Promise.all([...contexts].map(context => context.close())); }

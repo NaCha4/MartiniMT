@@ -265,9 +265,6 @@ function tasteContext(index = state.presentation?.slideIndex ?? state.slideIndex
   const key = slide?.game ?? 'whisky';
   return { key, slide, game: key === 'ox' ? state.oxGame : key === 'zoom' ? state.zoomGame : key === 'liar' ? state.liarGame : key === 'stopwatch' ? state.stopwatchGame : key === 'number' ? state.numberGame : key === 'memory' ? state.memoryGame : key === 'reaction' ? state.reactionGame : key === 'yut' ? state.yutGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
 }
-function hostYutNavigationLocked() {
-  return state.role === 'host' && state.presenting && STAGES[state.slideIndex]?.game === 'yut';
-}
 function nextBlocked() {
   const { slide, game } = tasteContext(state.slideIndex);
   if (slide.game === 'yut') return slide.view === 'play' ? !game?.result : stageIndex(state.slideIndex, 1) === state.slideIndex;
@@ -379,7 +376,7 @@ function hostView() {
   const managerConnections = api.fixedRoom
     ? Object.keys(state.managerDevices).map((uid, index) => `<button class="button soft" data-release-manager="${escape(uid)}" ${state.busy ? 'disabled' : ''}>${uid === state.uid ? '이 기기 로그아웃' : `관리자 기기 ${index + 1} 연결 해제`}</button>`).join('')
     : state.managerBinding ? button('관리자 휴대폰 연결 해제', 'release-manager') : '';
-  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>${api.fixedRoom ? '공용 행사 · ' : ''}명단 자동 저장 · 좌클릭 다음 · 우클릭 이전 · Esc 종료</p></div><div class="intro-actions">${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${managerConnections}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div>${oxQuestionEditor()}${zoomEditor(state.zoomDraft ?? state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, state.busy || !state.online, Boolean(state.zoomDraft))}</main>`;
+  return `${topbar()}<main class="dashboard"><section class="intro"><div><h1>행사 관리</h1><p>${api.fixedRoom ? '공용 행사 · ' : ''}명단 자동 저장 · 화면 이동은 리모컨으로 진행</p></div><div class="intro-actions">${button('초기화', 'reset', 'soft', !state.ready || !state.online || state.busy || state.controlsLocked)}${button(state.busy ? '준비 중…' : '발표 시작', 'present', 'dark', !state.ready || !state.online || state.busy || state.controlsLocked)}</div></section>${errorBanner()}<section class="manager-setup"><label for="manager-name">관리자 이름</label><input id="manager-name" maxlength="24" placeholder="리모컨을 사용할 사람의 이름" value="${escape(state.managerName)}" ${!state.ready || state.busy ? 'disabled' : ''}/><span id="manager-status" role="status">${escape(managerStatus())}</span>${managerConnections}</section><section class="event-strip"><div class="event-stat"><strong id="total-count">${count()}</strong><span>등록 인원</span></div><div class="event-stat"><strong>${connectedIds().size}</strong><span>현재 접속</span></div><div id="roster-status" class="event-status" role="status">${escape(rosterStatus())}</div></section><section class="section-title"><h2>참가자 명단</h2><span>4개 조 · 조별 최대 6명</span></section><div class="team-grid">${TEAM_IDS.map(rosterCard).join('')}</div>${oxQuestionEditor()}${zoomEditor(state.zoomDraft ?? state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, state.busy || !state.online, Boolean(state.zoomDraft))}</main>`;
 }
 
 function managerView() {
@@ -393,6 +390,7 @@ function managerView() {
     <nav class="remote-navigation" aria-label="발표 화면 이동">
       ${button('이전 화면', 'previous', 'soft', disabled || !state.presenting)}
       ${button('다음 화면', 'next', 'dark', disabled || !state.presenting || nextBlocked())}
+      ${button('설정', 'exit', 'soft', disabled || !state.presenting)}
     </nav>
   </main>`;
 }
@@ -528,9 +526,6 @@ function joinNetworkView() {
 
 function presentationView() {
   const slide = STAGES[state.slideIndex];
-  const resetControl = `<button class="button outline presentation-reset" data-action="reset" data-no-slide title="진행·투표·점수를 초기화하고 1번 화면으로 돌아갑니다" ${state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}>초기화</button>`;
-  const gameStarts = ['touch', 'taste-intro', 'soju-vote', 'military-vote', 'ox-intro', 'zoom-intro', 'liar-intro', 'stopwatch-intro', 'number-intro', 'memory-intro', 'reaction-intro', 'yut-intro'];
-  const debugControls = `<nav class="presentation-debug-tools" data-no-slide aria-label="디버깅 이동">${resetControl}<select id="debug-game-jump" aria-label="게임 바로가기" title="선택한 게임의 시작 화면으로 이동합니다" ${slide.game === 'yut' || state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}><option value="">게임 바로가기</option>${STAGES.map((stage, index) => gameStarts.includes(stage.id) ? `<option value="${index}">${stage.title}</option>` : '').join('')}</select></nav>`;
   const screenCode = state.winner ? slide.resultScreenCode ?? slide.screenCode : slide.screenCode;
   const screenLabel = import.meta.env.DEV ? `<span class="presentation-screen-code" aria-hidden="true">${screenCode}</span>` : '';
   const winnerElapsed = state.winner ? Math.max(0, performance.now() - state.winnerRevealedAt) : 0;
@@ -559,7 +554,7 @@ function presentationView() {
       <div class="race-copy">${message}</div>
     </section>`;
   }
-  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="${slide.game === 'yut' ? '윷놀이 화면. 화면 이동은 리모컨을 사용하세요.' : '발표 화면. 좌클릭 다음, 우클릭 이전'}" tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${debugControls}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
+  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 화면 이동은 리모컨을 사용하세요." tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
 }
 
 function participantTasteView() {
@@ -625,8 +620,6 @@ function participantView() {
 }
 
 function render() {
-  // Replacing a focused native select closes its open option list.
-  if (document.activeElement?.id === 'debug-game-jump') return;
   const previousPhoto = $('.zoom-photo');
   const previousYutBoard = $('[data-yut-board]');
   const previousQuestion = previousPhoto?.closest('[data-question]')?.dataset.question;
@@ -761,13 +754,9 @@ function chooseWinner() {
   }).catch(error => { state.finalizingWinner = false; showError(error); });
 }
 
-async function moveTo(index, { skipGame = false } = {}) {
+async function moveTo(index) {
   const resetAt = state.presentation?.resetAt ?? null;
-  if (skipGame) {
-    await api.setPresentationSlide(state.room, index, resetAt);
-    state.slideIndex = index;
-    state.winner = null; state.raceRoundId = null;
-  } else if (index === 0) {
+  if (index === 0) {
     state.raceRoundId = null; state.winner = null;
     await api.setPresentation(state.room, true, resetAt);
     state.slideIndex = 0;
@@ -817,15 +806,14 @@ async function moveTo(index, { skipGame = false } = {}) {
   }
   schedule();
 }
-async function advance(direction, { skipGame = false } = {}) {
-  if (!state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden || hostYutNavigationLocked()) return;
-  const directNavigation = skipGame && state.role === 'host';
+async function advance(direction) {
+  if (state.role !== 'manager' || !state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden) return;
   const next = stageIndex(state.slideIndex, direction);
   if (next === state.slideIndex) return;
-  if (direction > 0 && !directNavigation && nextBlocked()) return;
+  if (direction > 0 && nextBlocked()) return;
   lockControls();
   state.busy = true;
-  try { await moveTo(next, { skipGame: directNavigation }); } catch (error) { showError(error); }
+  try { await moveTo(next); } catch (error) { showError(error); }
   finally { state.busy = false; schedule(); }
 }
 
@@ -1108,8 +1096,8 @@ async function action(name, errorId) {
       state.yutGame = result.game; state.teamScores = result.scores;
       await api.followPresentationSlide(state.room, state.slideIndex, STAGES.findIndex(slide => slide.id === 'final-ranking'), state.presentation?.resetAt ?? null);
     }
-    if (name === 'reset' && state.role === 'host' && state.presenting) {
-      await api.resetPresentation(state.room);
+    if (name === 'reset' && state.role === 'host' && !state.presenting) {
+      await api.resetPresentation(state.room, false);
       state.gameError = '';
     }
     if (name === 'memory-start' && state.role !== 'participant' && STAGES[state.slideIndex]?.game === 'memory') await api.startMemoryGame(state.room, state.memoryGame.control?.roundId);
@@ -1273,27 +1261,6 @@ async function reactionAction(name) {
 
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
-  const gameJump = $('#debug-game-jump');
-  gameJump?.addEventListener('blur', schedule);
-  gameJump?.addEventListener('keydown', event => {
-    event.stopPropagation();
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      gameJump.blur();
-    }
-  });
-  gameJump?.addEventListener('change', async event => {
-    const value = event.target.value;
-    const index = Number(value);
-    gameJump.blur();
-    if (value === '' || !Number.isInteger(index) || !STAGES[index]
-      || state.role !== 'host' || !state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden || hostYutNavigationLocked()) return;
-    lockControls();
-    state.busy = true;
-    try { await moveTo(index); }
-    catch (error) { showError(error); }
-    finally { state.busy = false; schedule(); }
-  });
   for (const control of document.querySelectorAll('[data-vote], [data-ox-vote], [data-zoom-request], [data-liar-vote], [data-liar-action], [data-stopwatch-action], [data-number-action], [data-number-choice], [data-memory-action], [data-memory-card], [data-reaction-action]')) {
     input.bindVote(control);
   }
@@ -1682,28 +1649,12 @@ document.addEventListener('fullscreenchange', controllerViewportChanged);
 document.addEventListener('visibilitychange', schedule);
 window.addEventListener('resize', controllerViewportChanged);
 screen.orientation?.addEventListener('change', controllerViewportChanged);
-const controlTarget = target => target instanceof Element && target.closest('button, a, input, textarea, select, dialog, [data-no-slide]');
-document.addEventListener('click', event => { if (state.role === 'host' && state.presenting && event.button === 0 && event.detail < 2 && !controlTarget(event.target) && !window.getSelection()?.toString()) void advance(1, { skipGame: true }); });
 document.addEventListener('contextmenu', event => {
-  if (state.role !== 'host' || !state.presenting) {
-    if (interactionLocked() || state.controlsLocked) event.preventDefault();
-    return;
-  }
-  event.preventDefault();
-  if (hostYutNavigationLocked() || controlTarget(event.target)) return;
-  if (state.slideIndex === 0) void action('exit');
-  else void advance(-1);
+  if (state.presenting || interactionLocked() || state.controlsLocked) event.preventDefault();
 });
 document.addEventListener('keydown', event => {
   if (state.role !== 'host' || !state.presenting) return;
-  if (hostYutNavigationLocked()) {
-    if (['Escape', 'ArrowRight', 'ArrowLeft', 'PageUp', 'PageDown', ' '].includes(event.key)) event.preventDefault();
-    return;
-  }
-  if (event.repeat && ['Escape', 'ArrowRight', 'ArrowLeft', 'PageUp', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); return; }
-  if (event.key === 'Escape' && !document.fullscreenElement) { event.preventDefault(); void action('exit'); }
-  else if (!controlTarget(event.target) && ['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); void advance(1); }
-  else if (!controlTarget(event.target) && ['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); void advance(-1); }
+  if (['Escape', 'ArrowRight', 'ArrowLeft', 'PageUp', 'PageDown', ' '].includes(event.key)) event.preventDefault();
 });
 
 async function start() {

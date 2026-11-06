@@ -94,8 +94,10 @@ test('one entrant can locally count, reload, submit, reveal manually and score o
       return api.read(localStorage.getItem('martini.host-room'), 'teamScores/totals');
     });
     expect(total).toEqual({ A: 100, B: 0, C: 0, D: 0 });
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();
-    await expect(host.locator('.presentation-screen-code')).toHaveText('1');
+    await expect(host.locator('.dashboard')).toBeVisible();
     const game = await host.evaluate(async () => {
       const api = await import('/src/event-data.js'); await api.connect();
       return api.read(localStorage.getItem('martini.host-room'), 'stopwatchGame');

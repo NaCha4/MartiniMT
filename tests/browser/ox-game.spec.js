@@ -38,7 +38,7 @@ test('OX runs five elimination rounds, awards survivors once, and resets progres
     await next();
     await expect(host.locator('.presentation-screen-code')).toHaveText('14');
     await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
-    await host.keyboard.press('Escape');
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
     await expect(host.locator('.ox-editor')).toBeVisible();
     for (let index = 0; index < 5; index++) {
       await host.locator(`#ox-text-${index}`).fill(`로컬 검증용 ${index + 1}번 문제`);
@@ -133,8 +133,10 @@ test('OX runs five elimination rounds, awards survivors once, and resets progres
     await next();
     await host.reload();
     await expect(host.locator('[data-score-team="A"]')).toHaveText('50');
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();
-    await expect(host.locator('.presentation-screen-code')).toHaveText('1');
+    await expect(host.locator('.dashboard')).toBeVisible();
     const reset = await host.evaluate(async () => {
       const api = await import('/src/event-data.js');
       await api.connect();

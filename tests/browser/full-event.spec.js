@@ -299,7 +299,11 @@ test('26 independent sessions complete the full event with simultaneous votes, r
     });
 
     await test.step('Reset all games with all 26 sessions still connected', async () => {
+      await remote.getByRole('button', { name: '설정', exact: true }).click();
+      await expect(host.locator('.dashboard')).toBeVisible();
       await host.getByRole('button', { name: '초기화', exact: true }).click();
+      await expect(host.locator('.dashboard')).toBeVisible();
+      await host.getByRole('button', { name: '발표 시작', exact: true }).click();
       await checkpoint('join');
       await expect(host.locator('.arrival-heading strong')).toHaveText('24');
       for (const path of ['tasteGame', 'sojuGame', 'militaryGame', 'oxGame', 'zoomGame', 'liarGame', 'stopwatchGame', 'numberGame', 'memoryGame', 'reactionGame', 'teamScores']) expect(await read(path)).toBeNull();

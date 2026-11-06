@@ -69,13 +69,24 @@ test('fixed event restores quizzes across managers and keeps participants out of
     await expect(first.locator('#invite-url')).toHaveValue(new RegExp(SINGLE_EVENT_ROOM));
     await expect(second.locator('.presentation')).toHaveAttribute('data-slide', 'join');
     await expect(first.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
-    await first.keyboard.press('ArrowRight');
+    await first.evaluate(async () => {
+      const api = await import('/src/event-data.js');
+      const room = localStorage.getItem('martini.host-room');
+      const presentation = await api.read(room, 'presentation');
+      const participants = await api.read(room, 'participants');
+      await api.startTouchRound(room, Object.keys(participants), true, presentation.resetAt ?? null).confirmed;
+    });
     await expect(participant.locator('#tap-target')).toBeEnabled();
     await participant.locator('#tap-target').click();
     await expect(first.locator('#winner-name')).toHaveText('수정된공용참가자');
     await expect(second.locator('#winner-name')).toHaveText('수정된공용참가자');
     await expect(second.locator('.presentation')).toHaveAttribute('aria-busy', 'false');
-    await second.keyboard.press('Escape');
+    await second.evaluate(async () => {
+      const api = await import('/src/event-data.js');
+      const room = localStorage.getItem('martini.host-room');
+      const presentation = await api.read(room, 'presentation');
+      await api.setPresentation(room, false, presentation.resetAt ?? null);
+    });
     await expect(second.locator('.dashboard')).toBeVisible();
     second.once('dialog', dialog => dialog.accept());
     await second.getByRole('button', { name: /^관리자 기기 \d+ 연결 해제$/ }).click();

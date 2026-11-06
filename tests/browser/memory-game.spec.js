@@ -151,8 +151,10 @@ test('four players replay flip logs, progress through 12/14/16 cards and score i
       expect(Object.values(result.game.events[team])).toHaveLength(42);
       expect(Object.keys(result.game.events[team][0]).sort()).toEqual(['at', 'cardIndex', 'roundId', 'roundIndex', 'sequence']);
     }
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     await host.getByRole('button', { name: '초기화', exact: true }).click();
-    await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
+    await expect(host.locator('.dashboard')).toBeVisible();
     expect(errors).toEqual([]);
   } finally { await Promise.all(contexts.map(context => context.close())); }
 });

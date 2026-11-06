@@ -273,12 +273,13 @@ test('whisky, soju and military votes, reveals and cumulative scores survive rev
       const api = await import(source.name);
       return api.read(localStorage.getItem('martini.host-room'), 'participants');
     });
+    await remote.getByRole('button', { name: '설정', exact: true }).click();
+    await expect(host.locator('.dashboard')).toBeVisible();
     const resetButton = host.getByRole('button', { name: '초기화', exact: true });
     await expect(resetButton).toBeEnabled();
-    const resetBounds = await resetButton.boundingBox();
-    expect(resetBounds.x).toBeLessThan(50);
-    expect(resetBounds.y).toBeLessThan(50);
     await resetButton.click();
+    await expect(host.locator('.dashboard')).toBeVisible();
+    await host.getByRole('button', { name: '발표 시작', exact: true }).click();
     await expect(host.locator('.presentation-screen-code')).toHaveText('1');
     await host.screenshot({ path: '.cache/screenshots/reset-to-qr.png' });
     await expect(remote.getByRole('region', { name: '진행 대본' })).toContainText('레크레이션은 모바일기기와 웹을 이용해서 진행합니다.');
