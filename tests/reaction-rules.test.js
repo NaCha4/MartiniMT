@@ -36,8 +36,11 @@ async function signal() {
 }
 
 test('reaction admits one new entrant per team and keeps game controls private', async () => {
+  await assertFails(get(at('A5', 'reactionGame/submissions/A')));
   for (const id of ['A1', 'A2', 'A3', 'A4']) await assertFails(enter(id));
   await assertSucceeds(enter('A5'));
+  await assertSucceeds(get(at('A5', 'reactionGame/submissions/A')));
+  await assertFails(get(at('A6', 'reactionGame/submissions/A')));
   await assertFails(enter('A6'));
   await assertFails(tap('A5'));
   await assertFails(update(at('A5', 'reactionGame/control'), { phase: 'open' }));

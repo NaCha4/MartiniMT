@@ -31,6 +31,10 @@ test('reaction compares local durations despite delayed signals and keeps scores
     const next = () => remote.getByRole('button', { name: '다음 화면', exact: true }).click();
     await next();
     await expect(host.getByRole('heading', { name: '순발력 측정', exact: true })).toBeVisible();
+    for (const phone of [first, second, spectator]) {
+      await expect(phone.getByRole('heading', { name: '대기 중', exact: true })).toBeVisible();
+      await expect(phone.getByRole('alert')).toHaveCount(0);
+    }
     await next();
     await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
     for (const player of [first, second]) {
@@ -39,6 +43,7 @@ test('reaction compares local durations despite delayed signals and keeps scores
       await expect(player.getByRole('heading', { name: '출전 확정', exact: true })).toBeVisible();
     }
     await expect(spectator.getByRole('button', { name: /출전하기/ })).toHaveCount(0);
+    await expect(spectator.getByRole('alert')).toHaveCount(0);
     await next();
     await expect(host.locator('.reaction-screen')).toHaveCSS('background-color', 'rgb(0, 0, 0)');
     await expect(host.locator('.reaction-screen')).toHaveText('');
@@ -63,6 +68,7 @@ test('reaction compares local durations despite delayed signals and keeps scores
     await expect(second.locator('.reaction-tap')).toBeEnabled();
     await second.locator('.reaction-tap').click();
     await expect(host.locator('.reaction-results')).toBeVisible();
+    for (const phone of [first, second, spectator]) await expect(phone.getByRole('alert')).toHaveCount(0);
     const result = await host.evaluate(async () => {
       const api = await import('/src/event-data.js'); await api.connect();
       return api.read(localStorage.getItem('martini.host-room'), 'reactionGame');

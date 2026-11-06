@@ -67,6 +67,26 @@ function gameScreen(key = 'ox') {
   return { state, listeners, errors, watch: () => context.watchActiveGame(), reset: () => context.syncPresentation({ resetAt: 2 }) };
 }
 
+test('reaction reads private submissions only after this participant is confirmed', () => {
+  const screen = gameScreen('reaction');
+  assert.ok(screen.listeners.every(listener => !listener.path.includes('/submissions/')));
+  const initial = [...screen.listeners];
+  initial.forEach(listener => listener.onValue(null));
+  assert.equal(screen.state.reactionReady, true, 'Unselected participants finish connecting without a private read');
+  const contestants = initial.find(listener => listener.path === 'reactionGame/contestants');
+  contestants.onValue({ B: { participantId: 'B1' } });
+  assert.ok(screen.listeners.every(listener => !listener.path.includes('/submissions/')));
+  contestants.onValue({ A: { participantId: 'A1' }, B: { participantId: 'B1' } });
+  const submission = screen.listeners.find(listener => listener.path === 'reactionGame/submissions/A');
+  assert.ok(submission);
+  assert.equal(screen.state.reactionReady, false);
+  submission.onValue(null);
+  assert.equal(screen.state.reactionReady, true);
+  contestants.onValue({ A: { participantId: 'A1' } });
+  assert.equal(screen.listeners.filter(listener => listener.path.includes('/submissions/')).length, 1);
+  assert.deepEqual(screen.errors, []);
+});
+
 test('changing OX questions rejects delayed eligibility, ballot, result and error callbacks', () => {
   const screen = gameScreen();
   const previous = [...screen.listeners];

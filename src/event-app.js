@@ -1345,9 +1345,23 @@ function watchActiveGame() {
       const game = {};
       state.reactionGame = game; state.reactionReady = false;
       const ready = new Set();
+      let watchingSubmission = false;
       const received = field => { ready.add(field); state.reactionReady = ready.size === 6; schedule(); };
-      for (const field of ['control', 'contestants', 'winner', 'result']) gameSubscriptions.watch(`reactionGame/${field}`, value => { game[field] = value; received(field); }, showError);
-      gameSubscriptions.watch(`reactionGame/submissions/${state.participantId[0]}`, value => { game.submissions = { [state.participantId[0]]: value }; received('submission'); }, showError);
+      for (const field of ['control', 'winner', 'result']) gameSubscriptions.watch(`reactionGame/${field}`, value => { game[field] = value; received(field); }, showError);
+      gameSubscriptions.watch('reactionGame/contestants', value => {
+        game.contestants = value;
+        const team = state.participantId[0];
+        if (value?.[team]?.participantId === state.participantId && !watchingSubmission) {
+          watchingSubmission = true;
+          ready.delete('submission');
+          state.reactionReady = false;
+          gameSubscriptions.watch(`reactionGame/submissions/${team}`, submission => { game.submissions = { [team]: submission }; received('submission'); }, showError);
+        } else if (!watchingSubmission) {
+          game.submissions = {};
+          received('submission');
+        }
+        received('contestants');
+      }, showError);
       gameSubscriptions.watch(`reactionGame/excluded/${state.participantId}`, value => { game.excluded = { [state.participantId]: value }; received('excluded'); }, showError);
     } else gameSubscriptions.watch('reactionGame', value => { state.reactionGame = value ?? {}; schedule(); }, showGameError);
     return;
