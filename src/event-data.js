@@ -9,6 +9,7 @@ import { OX_QUESTION_COUNT, oxQuestionsReady, oxSurvivors, oxPoints } from './ox
 import { ZOOM_QUESTION_COUNT, ZOOM_LEVELS, zoomQuestionsReady, zoomPoints, judgeZoomRequest, finishZoomFeedback } from './zoom-model.js';
 import { liarRosterReady, liarTally, liarOutcome, liarRevealFinished, liarUsedIds } from './liar-model.js';
 import { stopwatchOutcome, stopwatchRevealFinished, STOPWATCH_MIN_MS, STOPWATCH_MAX_MS } from './stopwatch-model.js';
+import { NUMBER_ROUNDS, NUMBER_VALUES, numberExcludedIds, numberOutcome, numberRevealFinished } from './number-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -76,6 +77,7 @@ export function resetPresentation(room) {
     zoomGame: null,
     liarGame: null,
     stopwatchGame: null,
+    numberGame: null,
   };
   for (const { path } of Object.values(TASTE_ROUNDS)) changes[path] = null;
   return update(locationRef(room), changes);
@@ -451,6 +453,71 @@ export async function awardStopwatchPoints(room, now = Date.now()) {
   const result = await transactLoaded(locationRef(room, 'teamScores'), current => {
     if (current?.awards?.[game.control.roundId]) return;
     return { ...scoreAward(current, game.control.roundId, game.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
+  });
+  return result.snapshot.val();
+}
+
+export async function prepareNumberRound(room, roster, questionIndex, resetAt = null, now = Date.now()) {
+  const [liarGame, stopwatchGame] = await Promise.all([read(room, 'liarGame'), read(room, 'stopwatchGame')]);
+  const excluded = Object.fromEntries([...numberExcludedIds(liarGame, stopwatchGame)].map(id => [id, true]));
+  const roundId = push(locationRef(room, 'numberGame')).key;
+  const result = await transactLoaded(locationRef(room, 'numberGame'), current => {
+    if (!Number.isInteger(questionIndex) || questionIndex < 0 || questionIndex >= NUMBER_ROUNDS) throw { userMessage: '눈치 게임은 세 라운드입니다.' };
+    if (current?.rounds?.[questionIndex]) return;
+    if (!current && (questionIndex !== 0 || !Object.keys(roster).some(id => !excluded[id]))) throw { userMessage: '라이어·스톱워치에 출전하지 않은 참가자가 필요합니다.' };
+    if (current && (current.control.questionIndex !== questionIndex - 1 || !numberRevealFinished(current.rounds?.[questionIndex - 1], now))) throw { userMessage: '이전 라운드 결과를 먼저 공개해주세요.' };
+    return {
+      ...current, roster: current?.roster ?? roster, excluded: current?.excluded ?? excluded,
+      control: { roundId, questionIndex, phase: questionIndex === 0 ? 'selecting' : 'ready', resetAt, updatedAt: serverTimestamp() },
+      rounds: { ...current?.rounds, [questionIndex]: { roundId } },
+    };
+  });
+  const game = result.snapshot.val();
+  if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };
+  return game;
+}
+
+export async function claimNumberEntry(room, participantId, roundId) {
+  const person = await read(room, `numberGame/roster/${participantId}`);
+  if (!person) throw { userMessage: '등록된 참가자만 출전할 수 있습니다.' };
+  const result = await transactLoaded(locationRef(room, `numberGame/contestants/${person.team}`), current => current ? undefined
+    : { participantId, ...person, roundId, selectedAt: serverTimestamp() });
+  if (!result.committed) throw { userMessage: '우리 조의 출전자가 이미 정해졌습니다.' };
+}
+
+export async function changeNumberPhase(room, questionIndex, roundId, action) {
+  const result = await transactLoaded(locationRef(room, 'numberGame'), current => {
+    if (current?.control.roundId !== roundId || current.control.questionIndex !== questionIndex) return;
+    const expected = { 'number-start': 'selecting', 'number-open': 'ready', 'number-reveal': 'open' }[action];
+    if (!expected || current.control.phase !== expected) return;
+    if (!Object.keys(current.contestants ?? {}).length) throw { userMessage: '한 명 이상 출전한 뒤 시작해주세요.' };
+    const phase = { 'number-start': 'ready', 'number-open': 'open', 'number-reveal': 'revealed' }[action];
+    const updated = { ...current, control: { ...current.control, phase, updatedAt: serverTimestamp() } };
+    if (action === 'number-reveal') {
+      const round = current.rounds[questionIndex];
+      updated.rounds = { ...current.rounds, [questionIndex]: { ...round, result: { ...numberOutcome(current, round), revealedAt: serverTimestamp() } } };
+    }
+    return updated;
+  });
+  if (!result.committed) throw { userMessage: '눈치 게임 진행 단계가 변경되었습니다.' };
+  return result.snapshot.val();
+}
+
+export async function submitNumber(room, participantId, team, questionIndex, roundId, value) {
+  if (!NUMBER_VALUES.includes(value)) throw { userMessage: '1부터 10까지 정수를 선택해주세요.' };
+  const result = await transactLoaded(locationRef(room, `numberGame/rounds/${questionIndex}/submissions/${team}`), current => current ? undefined
+    : { participantId, roundId, value, submittedAt: serverTimestamp() });
+  const saved = result.snapshot.val();
+  if (saved?.participantId !== participantId || saved?.roundId !== roundId || saved?.value !== value) throw { userMessage: '이미 확정한 숫자는 바꿀 수 없습니다.' };
+}
+
+export async function awardNumberPoints(room, questionIndex, now = Date.now()) {
+  const game = await read(room, 'numberGame');
+  const round = game?.rounds?.[questionIndex];
+  if (!numberRevealFinished(round, now)) throw { userMessage: '숫자 공개가 끝난 뒤 점수를 반영합니다.' };
+  const result = await transactLoaded(locationRef(room, 'teamScores'), current => {
+    if (current?.awards?.[round.roundId]) return;
+    return { ...scoreAward(current, round.roundId, round.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
   });
   return result.snapshot.val();
 }

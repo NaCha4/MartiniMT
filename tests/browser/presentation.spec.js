@@ -57,12 +57,62 @@ async function clickSlide(page, button = 'left') {
   else await page.keyboard.press('ArrowRight');
 }
 
+test('Chrome mobile emulation keeps participants and the manager in windowed mode', async ({ browser }) => {
+  const desktop = await browser.newContext();
+  const phones = await Promise.all([
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+  ].map(userAgent => browser.newContext({
+    viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true,
+    userAgent,
+  })));
+  for (const context of phones) await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+  });
+  const host = await desktop.newPage();
+  const [participant, remote] = await Promise.all(phones.map(context => context.newPage()));
+  try {
+    await host.goto('/');
+    await expect(host.locator('#manager-name')).toBeEnabled();
+    await host.locator('#manager-name').fill('진행자');
+    await host.locator('#name-A1').fill('참가자');
+    await host.getByRole('button', { name: '발표 시작', exact: true }).click();
+    const invite = await host.locator('#invite-url').inputValue();
+    for (const [page, name] of [[participant, '참가자'], [remote, '진행자']]) {
+      await page.goto(invite);
+      expect(await page.evaluate(() => document.fullscreenEnabled)).toBe(true);
+      await page.locator('#real-name').fill(name);
+      await page.getByRole('button', { name: '입장', exact: true }).click();
+      await expect(page.locator('.controller-gate')).toHaveCount(0);
+      expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+    }
+    await expect(participant.getByRole('heading', { name: '대기 중' })).toBeVisible();
+    await expect(remote.locator('.manager-controller')).toBeVisible();
+    await participant.screenshot({ path: '.cache/screenshots/windowed-participant.png' });
+    await remote.screenshot({ path: '.cache/screenshots/windowed-manager.png' });
+    await remote.getByRole('button', { name: '다음 화면', exact: true }).click();
+    await expect(participant.locator('#tap-target')).toBeEnabled();
+    await participant.locator('#tap-target').click();
+    await expect(host.locator('#winner-name')).toHaveText('참가자');
+    await participant.reload();
+    await expect(participant.getByRole('heading', { name: '가장 먼저 터치했습니다!' })).toBeVisible();
+    await expect(participant.locator('.controller-gate')).toHaveCount(0);
+    await remote.setViewportSize({ width: 390, height: 844 });
+    await expect(remote.getByRole('heading', { name: '가로 화면으로 진행합니다.' })).toBeVisible();
+    await remote.setViewportSize({ width: 844, height: 390 });
+    await expect(remote.locator('.manager-controller')).toBeVisible();
+  } finally {
+    await Promise.all([desktop, ...phones].map(context => context.close()));
+  }
+});
+
 test('presentation navigation, live check-in, fullscreen and first-touch race', async ({ browser }) => {
   const desktop = await browser.newContext({ viewport: { width: 1366, height: 768 }, screen: { width: 1920, height: 1080 } });
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const second = await browser.newContext({ viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
   const host = await desktop.newPage(), alice = await mobile.newPage(), bob = await second.newPage();
   await mobile.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { get: () => 'Linux armv8l' });
     window.orientationRequests = [];
     Object.defineProperty(screen.orientation, 'lock', { value: async mode => { window.orientationRequests.push(mode); } });
   });
@@ -316,6 +366,7 @@ test('manager controls fit one rotated portrait panel in landscape fullscreen', 
     Object.defineProperty(document, 'fullscreenEnabled', { get: () => false });
   });
   await remoteContext.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { get: () => 'Linux armv8l' });
     window.managerRotation = 90;
     Object.defineProperty(screen.orientation, 'angle', { get: () => window.managerRotation });
     Object.defineProperty(screen.orientation, 'lock', { value: async () => {} });
@@ -527,6 +578,7 @@ test('manager controls fit one rotated portrait panel in landscape fullscreen', 
     await expect(host.locator('.presentation')).toHaveAttribute('data-slide', 'join');
     await expect(remote.getByRole('button')).toHaveText(['이전 화면', '다음 화면']);
     await remote.getByRole('button', { name: '이전 화면' }).click();
+    await expect(host.getByRole('button', { name: '발표 시작', exact: true })).toBeEnabled();
     await host.getByRole('button', { name: '관리자 휴대폰 연결 해제' }).click();
     await expect(remote.locator('.manager-controller')).toHaveCount(0);
     await expect(remote.locator('#real-name')).toBeVisible();
@@ -538,6 +590,9 @@ test('name entry stays intact through keyboard viewport changes before fullscree
   const tablet = await browser.newContext({
     viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true,
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+  });
+  await tablet.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { get: () => 'iPad' });
   });
   const host = await desktop.newPage(), ipad = await tablet.newPage();
   try {

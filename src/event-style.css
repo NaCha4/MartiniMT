@@ -899,6 +899,71 @@ dialog textarea { resize: vertical; }
 @keyframes stopwatch-winner-focus { from { box-shadow: none; } to { box-shadow: inset 0 0 0 2px var(--signal-color), 0 0 28px color-mix(in srgb, var(--signal-color), transparent 80%); background: color-mix(in srgb, var(--signal-color) 16%, #171719); } }
 @keyframes stopwatch-loser-dim { from { opacity: 1; filter: grayscale(0); } to { opacity: .32; filter: grayscale(1); border-color: #555b64; background: #18191c; } }
 .stopwatch-mobile h1 { text-align: center; }
+.number-intro { position: relative; display: flex; flex-direction: column; justify-content: center; }
+.number-intro h1 { margin: 2vh 0; font-size: clamp(44px, 6.5vw, 108px); line-height: 1.12; }
+.number-intro h1 em { color: var(--color-accent); font-style: normal; }
+.number-intro .liar-rules { font-size: clamp(17px, 1.9vw, 31px); }
+.number-intro-values { display: flex; gap: 12px; margin-bottom: 2vh; }
+.number-intro-values b { display: grid; place-items: center; width: 70px; height: 70px; border: 1px solid var(--color-highlight-border); font-size: 40px; }
+.number-intro-values .is-duplicate { color: #ff8991; text-decoration: line-through; opacity: .45; }
+.number-intro-values .is-winner { color: var(--color-accent); border-color: currentColor; transform: rotate(-6deg); }
+.number-screen { position: relative; display: flex; flex-direction: column; gap: 2vh; }
+.number-screen > h1 { margin: 0; font-size: clamp(26px, 3.5vw, 58px); }
+.number-track { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 8px; }
+.number-tile { min-width: 0; padding: 1vh 4px; border: 1px solid var(--color-highlight-border); background: var(--color-panel); text-align: center; }
+.number-tile b { display: block; font-size: clamp(22px, 3.4vw, 54px); line-height: 1.2; }
+.number-tile small { font-size: clamp(10px, 1vw, 16px); color: var(--color-text-secondary); }
+.number-contestants { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2vw; flex: 1; min-height: 0; }
+.number-contestant { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; gap: 1.2vh; padding: 2vh 12px; border: 1px solid var(--color-highlight-border); background: var(--color-panel); text-align: center; }
+.number-contestant > span { color: var(--signal-color); font-size: clamp(16px, 1.8vw, 28px); }
+.number-contestant > strong { font-size: clamp(20px, 2.5vw, 40px); overflow-wrap: anywhere; }
+.number-card { position: relative; display: grid; place-items: center; width: 100%; flex: 1; min-height: 0; color: var(--signal-color); font-size: clamp(42px, 10vh, 100px); line-height: 1; perspective: 600px; }
+.number-card b { display: block; }
+.number-contestant > p { margin: 0; min-height: 2.5em; font-size: clamp(11px, 1.2vw, 20px); color: var(--color-text-secondary); }
+.number-contestant.is-empty { opacity: .28; }
+.has-result .number-card b { animation: number-flip 550ms cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--number-delay); }
+.has-result .number-tile { animation: number-tile-reveal 400ms ease both; animation-delay: var(--number-delay); }
+.has-result .number-contestant > p { animation: number-show 400ms ease both; animation-delay: calc(3100ms + var(--number-elapsed)); }
+.has-result .number-contestant.is-duplicate { animation: number-eliminate 600ms ease both; animation-delay: calc(3200ms + var(--number-elapsed)); }
+.has-result .number-contestant.is-winner { animation: number-winner 600ms ease both; animation-delay: calc(3500ms + var(--number-elapsed)); }
+.has-result .number-tile.is-duplicate { color: #ff8991; border-color: #84474d; }
+.has-result .number-tile.is-duplicate b { text-decoration: line-through; }
+.has-result .number-tile.is-winner { color: var(--color-accent); border-color: currentColor; background: var(--color-highlight); }
+.number-countdown { position: absolute; inset: 0; pointer-events: none; display: grid; place-items: center; }
+.number-countdown b { grid-area: 1 / 1; color: var(--color-accent); font-size: clamp(120px, 22vh, 240px); text-shadow: 0 4px 50px #000; animation: stopwatch-count-step 500ms ease both; animation-delay: var(--count-delay); }
+.number-verdict { position: absolute; left: 50%; bottom: 10vh; transform: translateX(-50%); width: max-content; max-width: 90%; padding: 2vh 3vw; background: var(--color-accent); color: var(--color-accent-text); box-shadow: 0 12px 60px #0009; font-size: clamp(20px, 3vw, 48px); font-weight: 800; text-align: center; animation: number-show 650ms ease both; animation-delay: calc(3500ms + var(--number-elapsed)); pointer-events: none; }
+.number-screen .liar-status { font-size: clamp(12px, 1.3vw, 22px); margin: 0; }
+.number-mobile { text-align: center; }
+.number-mobile > h1 { font-size: clamp(24px, 4vw, 50px); }
+.number-picker { width: min(100%, 1000px); height: 100%; display: flex; flex-direction: column; gap: 10px; }
+.number-picker h1 { margin: 0 0 5px; font-size: clamp(20px, 3vw, 32px); }
+.number-picker p, .number-mobile .number-picker p { margin: 0; font-size: clamp(11px, 1.5vw, 17px); }
+.number-options { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(52px, 1fr)); flex: 1; min-height: 0; gap: 10px; }
+.number-options button { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; min-height: 0; border: 1px solid var(--color-highlight-border); border-radius: 10px; background: var(--color-panel); color: var(--color-text); font-size: clamp(24px, 5vh, 50px); font-weight: 700; touch-action: none; }
+.number-options button small { font-size: clamp(10px, 1.4vh, 14px); font-weight: 400; }
+.number-options button[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-accent-text); box-shadow: 0 0 0 2px var(--color-accent-wash); }
+.number-submit { width: 100%; flex-shrink: 0; }
+.number-personal-result { display: grid; gap: 12px; }
+.number-personal-result h1 { margin: 0; font-size: clamp(65px, 18vh, 150px); line-height: 1; }
+.number-personal-result.is-winner { color: var(--color-accent); }
+.number-personal-result.is-duplicate { color: #ff8991; }
+@keyframes number-flip { from { opacity: 0; transform: rotateY(90deg) scale(.6); } to { opacity: 1; transform: rotateY(0) scale(1); } }
+@keyframes number-tile-reveal { from { opacity: .12; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes number-show { from { opacity: 0; } to { opacity: 1; } }
+@keyframes number-eliminate { to { opacity: .45; border-color: #ff8991; background: #341d23; } }
+@keyframes number-winner { to { border-color: var(--color-accent); box-shadow: inset 0 0 0 2px var(--color-accent), 0 0 35px var(--color-accent-wash); background: var(--color-highlight); } }
+@media (max-height: 480px) {
+  .number-mobile { padding: 12px 20px; }
+  .number-picker { gap: 6px; }
+  .number-options { gap: 6px; }
+  .number-submit { min-height: 40px; padding: 8px; }
+  .number-picker h1 { font-size: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .number-countdown { display: none; }
+  .has-result .number-card b, .has-result .number-tile, .has-result .number-contestant > p, .number-verdict { animation-duration: 1ms; }
+  .has-result .number-card b, .has-result .number-tile { animation-name: number-show; }
+}
 .stopwatch-personal-result { display: grid; gap: 20px; }
 .stopwatch-personal-result p { margin: 0; color: var(--color-text-secondary); }
 .stopwatch-personal-result h1 { color: var(--signal-color); font-size: clamp(48px, 10vw, 100px); font-variant-numeric: tabular-nums; }

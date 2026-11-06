@@ -279,6 +279,54 @@ const stopwatchGameRules = {
   },
   '$other': denyExtra,
 };
+const numbers = `${s}.child('numberGame')`;
+const numberEntry = `${numbers}.child('contestants').child($team)`;
+const numberScreen = view => STAGES.map((stage, index) => ({ stage, index })).filter(({ stage }) => stage.game === 'number' && stage.view === view).map(({ stage, index }) => `(${s}.child('presentation/slideIndex').val() === ${index} && ${numbers}.child('control/questionIndex').val() === ${stage.questionIndex ?? 0})`).join(' || ');
+const numberNotUsed = `${stopwatchNotUsed} && ${stopwatch}.child('contestants').child($team).child('participantId').val() !== ${pid}`;
+const numberValue = { '.validate': 'newData.isNumber() && newData.val() >= 1 && newData.val() <= 10 && newData.val() % 1 === 0' };
+const numberGameRules = {
+  '.read': controller, '.write': controller,
+  '.validate': `newData.hasChildren(['control','roster','rounds']) && newData.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+  control: {
+    '.read': gameReader, '.validate': "newData.hasChildren(['roundId','questionIndex','phase','updatedAt'])",
+    roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' }, updatedAt: storedTimestamp,
+    questionIndex: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() < 3 && newData.val() % 1 === 0' },
+    phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'ready' || newData.val() === 'open' || newData.val() === 'revealed'" },
+    '$other': denyExtra,
+  },
+  roster: { '$participant': { ...tasteGameRules('numberGame', 0).roster.$participant, '.read': self } },
+  excluded: { '$participant': { '.read': self, '.validate': 'newData.val() === true' } },
+  contestants: {
+    '.read': gameReader,
+    '$team': {
+      '.write': `${member} && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && (${numberScreen('select')}) && ${numbers}.child('control/phase').val() === 'selecting' && ${numbers}.child('roster').child(${pid}).child('team').val() === $team && newData.child('participantId').val() === ${pid} && newData.child('roundId').val() === ${numbers}.child('control/roundId').val() && !${numbers}.child('excluded').child(${pid}).exists() && (${numberNotUsed})`,
+      '.validate': `($team === 'A' || $team === 'B' || $team === 'C' || $team === 'D') && newData.hasChildren(['participantId','name','team','teamName','roundId','selectedAt']) && newData.child('roundId').val() === ${numbers}.child('rounds/0/roundId').val() && newData.child('team').val() === $team && newData.child('name').val() === ${numbers}.child('roster').child(newData.child('participantId').val()).child('name').val() && newData.child('team').val() === ${numbers}.child('roster').child(newData.child('participantId').val()).child('team').val() && newData.child('teamName').val() === ${numbers}.child('roster').child(newData.child('participantId').val()).child('teamName').val()`,
+      participantId: text(2), name: text(24), team, teamName: text(20), roundId: text(20), selectedAt: storedTimestamp, '$other': denyExtra,
+    },
+  },
+  rounds: {
+    '$round': {
+      '.validate': "$round.matches(/^[0-2]$/) && newData.hasChild('roundId')",
+      roundId: text(20),
+      submissions: {
+        '$team': {
+          '.read': `${member} && ${numberEntry}.child('participantId').val() === ${pid}`,
+          '.write': `${member} && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && (${numberScreen('play')}) && ${numbers}.child('control/questionIndex').val() + '' === $round && ${numbers}.child('control/phase').val() === 'open' && ${numberEntry}.child('participantId').val() === ${pid} && newData.child('participantId').val() === ${pid} && newData.child('roundId').val() === ${numbers}.child('control/roundId').val()`,
+          '.validate': `newData.hasChildren(['participantId','roundId','value','submittedAt']) && newData.child('roundId').val() === newData.parent().parent().child('roundId').val() && newData.child('participantId').val() === ${numberEntry}.child('participantId').val()`,
+          participantId: text(2), roundId: text(20), value: numberValue,
+          submittedAt: { '.read': gameReader, ...storedTimestamp }, '$other': denyExtra,
+        },
+      },
+      result: {
+        '.read': gameReader, '.validate': "newData.hasChildren(['values','points','revealedAt'])",
+        values: { '$team': { '.validate': "newData.isNumber() && newData.val() === newData.parent().parent().parent().child('submissions').child($team).child('value').val()" } },
+        points: scoreMap, revealedAt: storedTimestamp, '$other': denyExtra,
+      },
+      '$other': denyExtra,
+    },
+  },
+  '$other': denyExtra,
+};
 const session = {
   '.read': owner,
   '.write': "auth != null && !data.exists() && newData.child('meta/ownerUid').val() === auth.uid && $session.matches(/^[A-Za-z0-9_-]{20}$/)",
@@ -397,6 +445,7 @@ const session = {
   militaryGame: tasteGameRules('militaryGame', 9),
   liarGame: liarGameRules,
   stopwatchGame: stopwatchGameRules,
+  numberGame: numberGameRules,
   oxQuestions: { '.read': controller, '.write': controller, ...oxQuestions },
   oxGame: oxGameRules,
   zoomQuestions: { '.read': controller, '.write': controller, ...zoomQuestions },

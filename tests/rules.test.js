@@ -53,6 +53,72 @@ async function createStopwatchGame() {
 const enterStopwatch = (id, roundId = stopwatchRoundId) => set(location(db(id), `stopwatchGame/contestants/${id[0]}`), { ...liarEntry(id), roundId });
 const submitStopwatch = (id, elapsedMs = 10000, roundId = stopwatchRoundId) => set(location(db(id), `stopwatchGame/submissions/${id[0]}`), { participantId: id, roundId, elapsedMs, submittedAt: serverTimestamp() });
 
+const numberRoundId = 'n'.repeat(20);
+async function createNumberGame() {
+  await createStopwatchGame();
+  await enterStopwatch('A2');
+  await set(location(db('host'), 'numberGame'), {
+    control: { roundId: numberRoundId, questionIndex: 0, phase: 'selecting', updatedAt: serverTimestamp() },
+    roster: liarRoster.participants, excluded: { A1: true, A2: true }, rounds: { 0: { roundId: numberRoundId } },
+  });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'number-select'), updatedAt: serverTimestamp() });
+}
+const enterNumber = (id, roundId = numberRoundId) => set(location(db(id), `numberGame/contestants/${id[0]}`), { ...liarEntry(id), roundId });
+const submitNumber = (id, value = 8, index = 0, roundId = numberRoundId) => set(location(db(id), `numberGame/rounds/${index}/submissions/${id[0]}`), { participantId: id, roundId, value, submittedAt: serverTimestamp() });
+
+test('number game excludes liar and stopwatch entrants with authoritative history and locks team slots', async () => {
+  await createNumberGame();
+  await assertFails(enterNumber('A1'));
+  await assertFails(enterNumber('A2'));
+  await remove(location(db('host'), 'numberGame/excluded'));
+  await assertFails(enterNumber('A1'));
+  await assertFails(enterNumber('A2'));
+  await assertFails(enterNumber('A3', 'old'.padEnd(20, '_')));
+  await assertSucceeds(enterNumber('A3'));
+  const results = await Promise.allSettled([enterNumber('B1'), enterNumber('B2')]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  await assertFails(enterNumber('A3'));
+  await assertFails(set(location(db('A3'), 'numberGame/control/phase'), 'open'));
+});
+
+test('number submissions require input-start, protect values, reject invalid and duplicate writes, and keep entrants across rounds', async () => {
+  await createNumberGame();
+  await enterNumber('A3'); await enterNumber('B1');
+  await assertFails(submitNumber('A3'));
+  await update(location(db('host'), 'numberGame/control'), { phase: 'ready', updatedAt: serverTimestamp() });
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'number-play-1'), updatedAt: serverTimestamp() });
+  await assertFails(submitNumber('A3'));
+  await update(location(db('host'), 'numberGame/control'), { phase: 'open', updatedAt: serverTimestamp() });
+  await assertFails(enterNumber('C1'));
+  for (const value of [0, 11, 1.5, '8']) await assertFails(submitNumber('A3', value));
+  await assertFails(submitNumber('A1'));
+  await assertFails(submitNumber('A3', 8, 0, 'old'.padEnd(20, '_')));
+  await assertFails(submitNumber('A3', 8, 1));
+  await assertSucceeds(submitNumber('A3', 10));
+  await assertFails(submitNumber('A3', 9));
+  await assertFails(remove(location(db('A3'), 'numberGame/rounds/0/submissions/A')));
+  await assertSucceeds(get(location(db('A3'), 'numberGame/rounds/0/submissions/A')));
+  for (const id of ['B1', 'A1']) {
+    await assertFails(get(location(db(id), 'numberGame/rounds/0/submissions/A')));
+    await assertFails(get(location(db(id), 'numberGame/rounds/0/submissions/A/value')));
+    await assertSucceeds(get(location(db(id), 'numberGame/rounds/0/submissions/A/submittedAt')));
+  }
+  await assertSucceeds(submitNumber('B1', 10));
+  await assertFails(set(location(db('A3'), 'numberGame/rounds/0/result'), { values: { A: 10 }, points: { A: 200, B: 0, C: 0, D: 0 }, revealedAt: serverTimestamp() }));
+  await update(location(db('host'), 'numberGame'), { 'control/phase': 'revealed', 'control/updatedAt': serverTimestamp(), 'rounds/0/result': { values: { A: 10, B: 10 }, points: { A: 0, B: 0, C: 0, D: 0 }, revealedAt: serverTimestamp() } });
+  await assertSucceeds(get(location(db('A1'), 'numberGame/rounds/0/result')));
+  const nextId = 'x'.repeat(20);
+  await assertSucceeds(update(location(db('host'), 'numberGame'), { 'control/roundId': nextId, 'control/questionIndex': 1, 'control/phase': 'open', 'control/updatedAt': serverTimestamp(), 'rounds/1': { roundId: nextId } }));
+  await set(location(db('host'), 'presentation'), { active: true, slideIndex: STAGES.findIndex(stage => stage.id === 'number-play-2'), updatedAt: serverTimestamp() });
+  await assertFails(submitNumber('A3', 8));
+  await assertFails(submitNumber('A3', 8, 1));
+  await assertSucceeds(submitNumber('A3', 1, 1, nextId));
+  await assertFails(set(location(db('A3'), 'numberGame/rounds/1/submissions/B'), { participantId: 'A3', roundId: nextId, value: 9, submittedAt: serverTimestamp() }));
+  const oldGame = (await get(location(db('host'), 'numberGame'))).val();
+  await update(location(db('host')), { presentation: { active: true, slideIndex: 0, resetAt: serverTimestamp(), updatedAt: serverTimestamp() }, numberGame: null });
+  await assertFails(set(location(db('host'), 'numberGame'), oldGame));
+});
+
 test('stopwatch excludes prior liar entrants and keeps one participant per team', async () => {
   await createStopwatchGame();
   await assertFails(enterStopwatch('A1'));

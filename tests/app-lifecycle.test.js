@@ -9,6 +9,31 @@ import { OX_QUESTION_COUNT } from '../src/ox-model.js';
 
 const source = readFileSync(new URL('../src/event-app.js', import.meta.url), 'utf8');
 
+test('desktop Chrome device emulation allows windowed controllers while mobile browsers retain fullscreen', () => {
+  const context = vm.createContext({
+    navigator: { userAgent: 'Mozilla/5.0 Chrome/142.0.0.0', platform: 'Win32' },
+    window: { chrome: {} },
+    document: { fullscreenEnabled: true, documentElement: { requestFullscreen() {} } },
+  });
+  vm.runInContext(source.slice(source.indexOf('function controllerCanFullscreen()'), source.indexOf('async function startController()')), context);
+  for (const platform of ['Win32', 'MacIntel', 'Linux x86_64', 'Linux i686']) {
+    context.navigator.platform = platform;
+    assert.equal(context.controllerCanFullscreen(), false, platform);
+  }
+  context.navigator.userAgent = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/142.0.0.0 Mobile Safari/537.36';
+  context.navigator.platform = 'Win32';
+  assert.equal(context.controllerCanFullscreen(), false, 'Android emulation on Windows');
+  context.navigator.platform = 'Linux armv8l';
+  assert.equal(context.controllerCanFullscreen(), true, 'physical Android phone');
+  context.navigator.platform = 'MacIntel';
+  context.navigator.userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
+  assert.equal(context.controllerCanFullscreen(), false, 'iPad emulation on desktop Chrome');
+  context.window.chrome = undefined;
+  assert.equal(context.controllerCanFullscreen(), true, 'iPad desktop-style platform');
+  context.document.fullscreenEnabled = false;
+  assert.equal(context.controllerCanFullscreen(), false, 'unsupported fullscreen');
+});
+
 function gameScreen(key = 'ox') {
   const listeners = [], errors = [];
   const state = {
@@ -42,6 +67,27 @@ test('changing OX questions rejects delayed eligibility, ballot, result and erro
   assert.ok(previous.every(listener => listener.stopped));
   for (const listener of screen.listeners.slice(previous.length)) listener.onValue(null);
   assert.equal(screen.state.oxReady, true, 'Readiness waits for all three current subscriptions, including null results');
+});
+
+test('number rounds replace all private subscriptions and ignore late results and submissions', () => {
+  const screen = gameScreen('number');
+  const previous = [...screen.listeners];
+  screen.state.numberChoice = 10;
+  previous.forEach(listener => listener.onValue(null));
+  assert.equal(screen.state.numberReady, true);
+  screen.state.questionIndex = 1;
+  screen.watch();
+  assert.equal(screen.state.numberChoice, null);
+  assert.equal(screen.state.numberReady, false);
+  previous.forEach(listener => { listener.onValue({ stale: true }); listener.onError('stale'); });
+  assert.equal(screen.state.numberGame.rounds[1].result, undefined);
+  assert.equal(screen.state.numberGame.rounds[1].submitted, undefined);
+  assert.deepEqual(screen.errors, []);
+  const current = screen.listeners.slice(previous.length);
+  assert.equal(current.length, 5);
+  current.forEach(listener => listener.onValue(null));
+  assert.equal(screen.state.numberReady, true);
+  assert.equal(screen.state.numberGame.rounds[1].submitted, false);
 });
 
 test('switching taste participants clears readiness and ignores the previous participant’s vote', () => {
