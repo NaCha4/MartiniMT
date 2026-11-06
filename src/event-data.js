@@ -8,7 +8,7 @@ import { TASTE_ROUNDS, tasteOutcome, revealOrder, scoreAward } from './taste-mod
 import { OX_QUESTION_COUNT, oxQuestionsReady, oxSurvivors, oxPoints } from './ox-model.js';
 import { ZOOM_QUESTION_COUNT, ZOOM_LEVELS, zoomQuestionsReady, zoomPoints, judgeZoomRequest, finishZoomFeedback } from './zoom-model.js';
 import { liarRosterReady, liarTally, liarOutcome, liarRevealFinished, liarUsedIds } from './liar-model.js';
-import { stopwatchOutcome, STOPWATCH_MIN_MS, STOPWATCH_MAX_MS } from './stopwatch-model.js';
+import { stopwatchOutcome, stopwatchRevealFinished, STOPWATCH_MIN_MS, STOPWATCH_MAX_MS } from './stopwatch-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -444,9 +444,10 @@ export async function submitStopwatch(room, participantId, team, roundId, elapse
   if (saved?.participantId !== participantId || saved?.roundId !== roundId) throw { userMessage: '제출 상태를 확인해주세요.' };
 }
 
-export async function awardStopwatchPoints(room) {
+export async function awardStopwatchPoints(room, now = Date.now()) {
   const game = await read(room, 'stopwatchGame');
   if (game?.control?.phase !== 'revealed' || !game.result) throw { userMessage: '결과를 먼저 공개해주세요.' };
+  if (!stopwatchRevealFinished(game, now)) throw { userMessage: '기록 공개가 끝난 뒤 점수를 반영합니다.' };
   const result = await transactLoaded(locationRef(room, 'teamScores'), current => {
     if (current?.awards?.[game.control.roundId]) return;
     return { ...scoreAward(current, game.control.roundId, game.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };

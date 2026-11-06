@@ -76,8 +76,12 @@ test('one entrant can locally count, reload, submit, reveal manually and score o
     await player.reload();
     await expect(player.getByRole('heading', { name: '제출 완료', exact: true })).toBeVisible();
     await remote.getByRole('button', { name: '결과 공개', exact: true }).click();
-    await expect(host.locator('.stopwatch-time')).toContainText((submission.elapsedMs / 1000).toFixed(3));
+    await expect(host.locator('.stopwatch-countdown')).toBeVisible();
+    await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+    await expect(host.locator('.stopwatch-screen')).toHaveClass(/is-settled/);
+    await expect(host.locator('.stopwatch-time')).toContainText((Math.round(submission.elapsedMs / 10) / 100).toFixed(2));
     await expect(host.locator('.stopwatch-award')).toHaveText('+100점');
+    await expect(player.locator('.stopwatch-personal-result h1')).toContainText((Math.round(submission.elapsedMs / 10) / 100).toFixed(2));
     await next();
     await expect(host.getByRole('heading', { name: '인간스톱워치 점수', exact: true })).toBeVisible();
     await host.evaluate(async () => {
@@ -104,7 +108,7 @@ test('four entrants reveal together only after all submit and tied teams each ge
   test.setTimeout(90000);
   const { contexts, host, remote, players, next } = await setup(browser, ['A2', 'B1', 'C1', 'D1']);
   try {
-    const times = [9900, 10100, 12000, 7000];
+    const times = [9987, 10011, 12004, 7001];
     for (const [index, player] of players.entries()) {
       await player.evaluate(async elapsedMs => {
         const api = await import('/src/event-data.js'); const uid = await api.connect();
@@ -118,8 +122,16 @@ test('four entrants reveal together only after all submit and tied teams each ge
       if (index < 3) await expect(remote.getByRole('button', { name: '결과 공개', exact: true })).toBeDisabled();
     }
     await remote.getByRole('button', { name: '결과 공개', exact: true }).click();
+    await expect(host.locator('.stopwatch-countdown')).toBeVisible();
+    await expect(remote.getByRole('button', { name: '다음 화면', exact: true })).toBeDisabled();
+    await expect(host.locator('.stopwatch-screen')).toHaveClass(/is-settled/);
     await expect(host.locator('.stopwatch-time')).toHaveCount(4);
+    await expect(host.locator('[data-stopwatch-time]')).toHaveText(['9.99', '10.01', '12.00', '7.00']);
     await expect(host.locator('.stopwatch-award')).toHaveCount(2);
+    await expect(host.locator('.stopwatch-contestant.is-loser')).toHaveCount(2);
+    await expect(host.locator('.stopwatch-contestant[data-team="C"]')).toHaveCSS('filter', 'grayscale(1)');
+    await expect(host.locator('.stopwatch-contestant[data-team="C"]')).toHaveCSS('opacity', '0.32');
+    await expect(host.locator('.stopwatch-contestant[data-team="A"]')).toHaveCSS('filter', 'none');
     await expect(host.locator('.stopwatch-screen')).toBeVisible();
     const fits = await host.evaluate(() => {
       const screen = document.querySelector('.stopwatch-screen');
@@ -127,6 +139,9 @@ test('four entrants reveal together only after all submit and tied teams each ge
     });
     expect(fits).toBe(true);
     await host.screenshot({ path: '.cache/stopwatch-results.png' });
+    await host.reload();
+    await expect(host.locator('.stopwatch-countdown')).toBeHidden();
+    await expect(host.locator('[data-stopwatch-time]')).toHaveText(['9.99', '10.01', '12.00', '7.00']);
     await next();
     const total = await host.evaluate(async () => {
       const api = await import('/src/event-data.js'); await api.connect();

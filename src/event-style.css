@@ -865,11 +865,48 @@ dialog textarea { resize: vertical; }
 }
 .stopwatch-screen { gap: 2vh; }
 .stopwatch-screen h1 { margin: 1vh 0; }
-.stopwatch-contestant { gap: clamp(10px, 1.5vh, 20px); padding: clamp(12px, 1.5vw, 28px); }
-.stopwatch-contestant p { margin: 0; font-size: clamp(14px, 1.4vw, 22px); }
-.stopwatch-contestant.is-winner { border-color: var(--signal-color); box-shadow: 0 0 0 3px var(--signal-color); }
-.stopwatch-time { font-size: clamp(24px, 3.2vw, 54px); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.1; }
+.stopwatch-board { position: relative; display: flex; flex: 1; min-height: 0; }
+.stopwatch-board > .liar-contestants { width: 100%; }
+.stopwatch-contestant { justify-content: space-between; gap: clamp(12px, 2vh, 24px); padding: clamp(16px, 2vw, 32px); overflow: hidden; }
+.stopwatch-person { display: grid; gap: 12px; }
+.stopwatch-person > span { color: var(--signal-color); font-size: clamp(20px, 2vw, 34px); font-weight: 600; }
+.stopwatch-person > strong { font-size: clamp(22px, 2.7vw, 46px); overflow-wrap: anywhere; }
+.stopwatch-contestant.is-empty { opacity: .25; filter: grayscale(1); }
+.stopwatch-waiting { display: grid; gap: 20px; margin: auto 0; }
+.stopwatch-mask { opacity: .15; font-size: clamp(40px, 6vw, 110px); font-variant-numeric: tabular-nums; line-height: 1; }
+.stopwatch-status { display: flex; align-items: center; gap: 10px; font-size: clamp(16px, 1.7vw, 28px); color: var(--color-text-secondary); }
+.stopwatch-status::before { content: ''; width: 5px; height: 18px; background: #626872; }
+.is-submitted .stopwatch-status { color: var(--signal-color); }
+.is-submitted .stopwatch-status::before { background: var(--signal-color); }
+.stopwatch-record { display: grid; gap: 12px; animation: stopwatch-record-open 600ms ease both; animation-delay: var(--stopwatch-record-delay); }
+.stopwatch-record-label { color: var(--color-text-secondary); font-size: clamp(12px, 1.2vw, 18px); }
+.stopwatch-time { color: var(--signal-color); font-size: clamp(36px, 4.4vw, 80px); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; letter-spacing: -.05em; }
 .stopwatch-time small { margin-left: 5px; font-size: .4em; }
-.stopwatch-status { font-size: clamp(18px, 2vw, 30px); }
-.stopwatch-award { font-size: clamp(24px, 3vw, 42px); }
+.stopwatch-time.is-long-record { font-size: clamp(20px, 3vw, 54px); }
+.stopwatch-error { margin: 0; color: var(--color-text-secondary); font-size: clamp(12px, 1.2vw, 20px); line-height: 1.4; animation: stopwatch-record-open 500ms ease both; animation-delay: var(--stopwatch-winner-delay); }
+.stopwatch-outcome { height: 64px; min-height: 64px; display: flex; align-items: center; border-top: 1px solid rgb(255 255 255 / 12%); padding-top: 16px; animation: stopwatch-record-open 500ms ease both; animation-delay: var(--stopwatch-winner-delay); }
+.stopwatch-outcome > span { color: var(--color-text-secondary); font-size: clamp(14px, 1.4vw, 20px); }
+.stopwatch-award { color: var(--signal-color); font-size: clamp(24px, 2.8vw, 40px); }
+.stopwatch-results .is-winner { animation: stopwatch-winner-focus 600ms ease both; animation-delay: var(--stopwatch-winner-delay); }
+.stopwatch-results .is-loser { animation: stopwatch-loser-dim 600ms ease both; animation-delay: var(--stopwatch-winner-delay); }
+.stopwatch-countdown { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #141416; animation: stopwatch-cover-out calc(3 * var(--stopwatch-count-step)) linear both; animation-delay: var(--stopwatch-reveal-delay); }
+.stopwatch-countdown > p { margin: 0 0 3vh; color: var(--color-text-secondary); font-size: clamp(18px, 2vw, 32px); letter-spacing: .15em; }
+.stopwatch-countdown > div { position: relative; width: 2em; height: 1.1em; text-align: center; font-size: clamp(80px, 11vw, 180px); font-variant-numeric: tabular-nums; line-height: 1; }
+.stopwatch-countdown b { position: absolute; inset: 0; animation: stopwatch-count-step var(--stopwatch-count-step) ease both; animation-delay: calc(var(--step) * var(--stopwatch-count-step) + var(--stopwatch-reveal-delay)); }
+@keyframes stopwatch-cover-out { 0%, 88% { opacity: 1; visibility: visible; } 100% { opacity: 0; visibility: hidden; } }
+@keyframes stopwatch-count-step { 0% { opacity: 0; transform: translateY(16px); } 20%, 75% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-16px); } }
+@keyframes stopwatch-record-open { from { opacity: 0; clip-path: inset(100% 0 0); transform: translateY(12px); } to { opacity: 1; clip-path: inset(0); transform: translateY(0); } }
+@keyframes stopwatch-winner-focus { from { box-shadow: none; } to { box-shadow: inset 0 0 0 2px var(--signal-color), 0 0 28px color-mix(in srgb, var(--signal-color), transparent 80%); background: color-mix(in srgb, var(--signal-color) 16%, #171719); } }
+@keyframes stopwatch-loser-dim { from { opacity: 1; filter: grayscale(0); } to { opacity: .32; filter: grayscale(1); border-color: #555b64; background: #18191c; } }
 .stopwatch-mobile h1 { text-align: center; }
+.stopwatch-personal-result { display: grid; gap: 20px; }
+.stopwatch-personal-result p { margin: 0; color: var(--color-text-secondary); }
+.stopwatch-personal-result h1 { color: var(--signal-color); font-size: clamp(48px, 10vw, 100px); font-variant-numeric: tabular-nums; }
+.stopwatch-personal-result small { margin-left: 8px; font-size: .4em; }
+.stopwatch-personal-result.is-loser { opacity: .4; filter: grayscale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .stopwatch-countdown { display: none; }
+  .stopwatch-record, .stopwatch-error, .stopwatch-outcome, .stopwatch-results .is-winner { animation: none; }
+  .stopwatch-results .is-winner { box-shadow: inset 0 0 0 2px var(--signal-color); }
+  .stopwatch-results .is-loser { animation: none; opacity: .32; filter: grayscale(1); }
+}

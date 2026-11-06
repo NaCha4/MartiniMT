@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { STAGES, stageIndex } from '../src/event-model.js';
-import { createStopwatchClock, stopwatchOutcome, stopwatchSubmitted } from '../src/stopwatch-model.js';
+import { createStopwatchClock, formatStopwatchTime, roundStopwatchMs, stopwatchOutcome, stopwatchRevealFinished, stopwatchRevealProgress, stopwatchSubmitted, STOPWATCH_COUNTDOWN_DURATION, STOPWATCH_RECORD_DURATION, STOPWATCH_REVEAL_DURATION } from '../src/stopwatch-model.js';
 import { stopwatchPresentation, stopwatchControls, stopwatchParticipant } from '../src/stopwatch-view.js';
 
 const game = times => ({
@@ -27,6 +27,30 @@ test('stopwatch supports one to four entrants, exact ties, and rejects incomplet
   const stale = game({ A: 10000 });
   stale.submissions.A.roundId = 'old';
   assert.equal(stopwatchSubmitted(stale), false);
+});
+
+test('hundredth-second rounding drives display, local measurements and ties for older submissions', () => {
+  assert.equal(formatStopwatchTime(9994), '9.99');
+  assert.equal(formatStopwatchTime(9995), '10.00');
+  assert.equal(formatStopwatchTime(10005), '10.01');
+  assert.equal(roundStopwatchMs(9876.2), 9880);
+  const rounded = stopwatchOutcome(game({ A: 9987, B: 10011, C: 12004 }));
+  assert.deepEqual(rounded.points, { A: 100, B: 100, C: 0, D: 0 });
+  assert.equal(rounded.elapsedMs.A, 9987);
+  let now = 0;
+  const clock = createStopwatchClock({ now: () => now });
+  clock.start('rounded'); now = 9876.2;
+  assert.equal(clock.stop('rounded'), 9880);
+});
+
+test('record animation and winner emphasis use the saved reveal time', () => {
+  const active = { result: { revealedAt: 1000 } };
+  assert.equal(stopwatchRevealProgress(active, 1000 + STOPWATCH_COUNTDOWN_DURATION), 0);
+  assert.equal(stopwatchRevealProgress(active, 1000 + STOPWATCH_COUNTDOWN_DURATION + STOPWATCH_RECORD_DURATION / 2), .5);
+  assert.equal(stopwatchRevealProgress(active, 1000 + STOPWATCH_REVEAL_DURATION), 1);
+  assert.equal(stopwatchRevealFinished(active, 999 + STOPWATCH_REVEAL_DURATION), false);
+  assert.equal(stopwatchRevealFinished(active, 1000 + STOPWATCH_REVEAL_DURATION), true);
+  assert.equal(stopwatchRevealFinished({}, 10000), false);
 });
 
 test('local clock waits one second and freezes duration through upload delays and same-tab reloads', () => {
@@ -56,9 +80,12 @@ test('presentation and remote hide times until manual reveal and wait for actual
   assert.match(stopwatchControls(active, slide, false), /disabled/);
   delete active.contestants.B;
   assert.doesNotMatch(stopwatchControls(active, slide, false), /disabled/);
-  active.result = stopwatchOutcome(active);
-  assert.match(stopwatchPresentation(active, slide), /9\.876/);
-  assert.match(stopwatchPresentation(active, slide), /\+100점/);
+  active.result = { ...stopwatchOutcome(active), revealedAt: 1000 };
+  assert.match(stopwatchPresentation(active, slide, 1000), /is-revealing/);
+  const finished = stopwatchPresentation(active, slide, 1000 + STOPWATCH_REVEAL_DURATION);
+  assert.match(finished, /9\.88/);
+  assert.match(finished, /is-settled/);
+  assert.match(finished, /\+100점/);
 });
 
 test('participant excludes liar players and only exposes a stop button after the local delay', () => {
@@ -71,4 +98,12 @@ test('participant excludes liar players and only exposes a stop button after the
   assert.doesNotMatch(stopwatchParticipant(props), /카운트 종료/);
   props.canStop = true;
   assert.match(stopwatchParticipant(props), /카운트 종료/);
+  props.game = game({ A: 9876, B: 10000 });
+  props.game.result = { ...stopwatchOutcome(props.game), revealedAt: 1000 };
+  props.now = 1000;
+  assert.match(stopwatchParticipant(props), /발표 화면을 확인해주세요/);
+  assert.doesNotMatch(stopwatchParticipant(props), /9\.88/);
+  props.now = 1000 + STOPWATCH_REVEAL_DURATION;
+  assert.match(stopwatchParticipant(props), /is-loser/);
+  assert.match(stopwatchParticipant(props), /9\.88/);
 });
