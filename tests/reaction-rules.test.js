@@ -65,3 +65,23 @@ test('reaction accepts one atomic winner after the live signal and rejects spoof
   await assertFails(set(at('host', 'reactionGame'), old));
   await assertFails(tap('A5'));
 });
+
+test('local reaction accepts one elapsed duration per entrant and protects hidden records', async () => {
+  await update(at('host', 'reactionGame/control'), { localTiming: true });
+  await enter('A5'); await enter('B5');
+  const submit = (id, elapsedMs, changes = {}) => set(at(id, `reactionGame/submissions/${id[0]}`), { participantId: id, roundId, elapsedMs, submittedAt: serverTimestamp(), ...changes });
+  await assertFails(submit('A5', 250));
+  await signal();
+  await assertFails(tap('A5'));
+  await assertFails(submit('A6', 250));
+  for (const value of [-1, 2.5, 86400001, '100']) await assertFails(submit('A5', value));
+  await assertFails(submit('A5', 250, { roundId: 'old' }));
+  await assertSucceeds(submit('A5', 350));
+  await assertFails(submit('A5', 200));
+  await assertFails(remove(at('A5', 'reactionGame/submissions/A')));
+  await assertFails(get(at('B5', 'reactionGame/submissions/A')));
+  await assertSucceeds(get(at('A5', 'reactionGame/submissions/A')));
+  await assertSucceeds(submit('B5', 180));
+  await update(at('host', 'reactionGame'), { 'control/phase': 'finished', 'control/updatedAt': serverTimestamp(), result: { points: { A: 0, B: 100, C: 0, D: 0 }, elapsedMs: { A: 350, B: 180 }, revealedAt: serverTimestamp() } });
+  await assertSucceeds(get(at('B1', 'reactionGame/result')));
+});

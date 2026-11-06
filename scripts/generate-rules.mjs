@@ -388,6 +388,7 @@ const reactionGameRules = {
   control: {
     '.read': gameReader, '.validate': "newData.hasChildren(['roundId','phase','updatedAt'])",
     roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' }, updatedAt: storedTimestamp, signaledAt: storedTimestamp,
+    localTiming: { '.validate': 'newData.val() === true' },
     phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'open' || newData.val() === 'finished'" },
     '$other': denyExtra,
   },
@@ -403,12 +404,23 @@ const reactionGameRules = {
   },
   winner: {
     '.read': gameReader,
-    '.write': `${member} && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${reactionScreen('play')} && ${reaction}.child('control/phase').val() === 'open' && newData.child('participantId').val() === ${pid} && ${reaction}.child('contestants').child(newData.child('team').val()).child('participantId').val() === ${pid}`,
+    '.write': `${member} && ${reaction}.child('control/localTiming').val() !== true && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${reactionScreen('play')} && ${reaction}.child('control/phase').val() === 'open' && newData.child('participantId').val() === ${pid} && ${reaction}.child('contestants').child(newData.child('team').val()).child('participantId').val() === ${pid}`,
     '.validate': `newData.hasChildren(['participantId','team','roundId','tappedAt']) && newData.child('roundId').val() === ${reaction}.child('control/roundId').val() && newData.child('tappedAt').val() >= ${reaction}.child('control/signaledAt').val()`,
     participantId: text(2), team, roundId: text(20), tappedAt: storedTimestamp, '$other': denyExtra,
   },
+  submissions: {
+    '$team': {
+      '.read': `${member} && ${reaction}.child('contestants').child($team).child('participantId').val() === ${pid}`,
+      '.write': `${member} && ${reaction}.child('control/localTiming').val() === true && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${reactionScreen('play')} && ${reaction}.child('control/phase').val() === 'open' && ${reaction}.child('contestants').child($team).child('participantId').val() === ${pid} && newData.child('participantId').val() === ${pid}`,
+      '.validate': `newData.hasChildren(['participantId','roundId','elapsedMs','submittedAt']) && newData.child('roundId').val() === ${reaction}.child('control/roundId').val()`,
+      participantId: text(2), roundId: text(20), submittedAt: storedTimestamp,
+      elapsedMs: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() <= 86400000 && newData.val() % 1 === 0' },
+      '$other': denyExtra,
+    },
+  },
   result: {
-    '.read': gameReader, '.validate': "newData.hasChildren(['points','revealedAt']) && newData.parent().child('control/phase').val() === 'finished' && newData.parent().child('winner').exists()",
+    '.read': gameReader, '.validate': "newData.hasChildren(['points','revealedAt']) && newData.parent().child('control/phase').val() === 'finished' && (newData.parent().child('winner').exists() || (newData.parent().child('control/localTiming').val() === true && newData.hasChild('elapsedMs')))",
+    elapsedMs: { '$team': { '.validate': "newData.isNumber() && newData.val() === newData.parent().parent().parent().child('submissions').child($team).child('elapsedMs').val()" } },
     points: scoreMap, revealedAt: storedTimestamp, '$other': denyExtra,
   },
   '$other': denyExtra,

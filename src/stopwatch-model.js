@@ -39,7 +39,7 @@ export function stopwatchOutcome(game) {
 
 // The monotonic local clock includes its time origin so a same-tab reload can resume.
 // A completed measurement is saved before upload and reused unchanged on retries.
-export function createStopwatchClock({ now = () => performance.timeOrigin + performance.now(), storage } = {}) {
+export function createStopwatchClock({ now = () => performance.timeOrigin + performance.now(), storage, minimumMs = STOPWATCH_MIN_MS, round = roundStopwatchMs } = {}) {
   const attempts = new Map();
   function read(key) {
     if (attempts.has(key)) return attempts.get(key);
@@ -63,8 +63,8 @@ export function createStopwatchClock({ now = () => performance.timeOrigin + perf
       if (!attempt) throw { userMessage: '카운트를 먼저 시작해주세요.' };
       if (attempt.elapsedMs !== null) return attempt.elapsedMs;
       const duration = now() - attempt.startedAt;
-      if (duration < STOPWATCH_MIN_MS) throw { userMessage: '카운트 시작 1초 후 종료할 수 있습니다.' };
-      const elapsedMs = roundStopwatchMs(duration);
+      if (duration < minimumMs) throw { userMessage: '카운트 시작 1초 후 종료할 수 있습니다.' };
+      const elapsedMs = round(duration);
       if (elapsedMs > STOPWATCH_MAX_MS) throw { userMessage: '측정 가능 시간 24시간을 초과했습니다.' };
       save(key, { ...attempt, elapsedMs });
       return elapsedMs;

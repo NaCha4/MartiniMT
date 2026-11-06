@@ -1329,6 +1329,9 @@
               "signaledAt": {
                 ".validate": "newData.isNumber() && (newData.val() === data.val() || newData.val() === now)"
               },
+              "localTiming": {
+                ".validate": "newData.val() === true"
+              },
               "phase": {
                 ".validate": "newData.val() === 'selecting' || newData.val() === 'open' || newData.val() === 'finished'"
               },
@@ -1390,7 +1393,7 @@
             },
             "winner": {
               ".read": "((auth != null && root.child('mtChatV1/sessions').child($session).child('meta/ownerUid').val() === auth.uid) || (auth != null && !root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).exists() && root.child('mtChatV1/sessions').child($session).child('managerBinding/uid').val() === auth.uid && root.child('mtChatV1/sessions').child($session).child('managerDevices').child(auth.uid).child('nameKey').val() === root.child('mtChatV1/sessions').child($session).child('managerBinding/nameKey').val() && root.child('mtChatV1/sessions').child($session).child('managerLookup').child(root.child('mtChatV1/sessions').child($session).child('managerBinding/nameKey').val()).exists())) || (auth != null && root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).exists() && root.child('mtChatV1/sessions').child($session).child('bindings').child(root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()).child('uid').val() === auth.uid)",
-              ".write": "auth != null && root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).exists() && root.child('mtChatV1/sessions').child($session).child('bindings').child(root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()).child('uid').val() === auth.uid && !data.exists() && newData.exists() && root.child('mtChatV1/sessions').child($session).child('presentation/active').val() === true && root.child('mtChatV1/sessions').child($session).child('presentation/slideIndex').val() === 64 && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('control/phase').val() === 'open' && newData.child('participantId').val() === root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val() && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('contestants').child(newData.child('team').val()).child('participantId').val() === root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()",
+              ".write": "auth != null && root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).exists() && root.child('mtChatV1/sessions').child($session).child('bindings').child(root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()).child('uid').val() === auth.uid && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('control/localTiming').val() !== true && !data.exists() && newData.exists() && root.child('mtChatV1/sessions').child($session).child('presentation/active').val() === true && root.child('mtChatV1/sessions').child($session).child('presentation/slideIndex').val() === 64 && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('control/phase').val() === 'open' && newData.child('participantId').val() === root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val() && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('contestants').child(newData.child('team').val()).child('participantId').val() === root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()",
               ".validate": "newData.hasChildren(['participantId','team','roundId','tappedAt']) && newData.child('roundId').val() === root.child('mtChatV1/sessions').child($session).child('reactionGame').child('control/roundId').val() && newData.child('tappedAt').val() >= root.child('mtChatV1/sessions').child($session).child('reactionGame').child('control/signaledAt').val()",
               "participantId": {
                 ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2"
@@ -1408,9 +1411,36 @@
                 ".validate": false
               }
             },
+            "submissions": {
+              "$team": {
+                ".read": "auth != null && root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).exists() && root.child('mtChatV1/sessions').child($session).child('bindings').child(root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()).child('uid').val() === auth.uid && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('contestants').child($team).child('participantId').val() === root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()",
+                ".write": "auth != null && root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).exists() && root.child('mtChatV1/sessions').child($session).child('bindings').child(root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()).child('uid').val() === auth.uid && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('control/localTiming').val() === true && !data.exists() && newData.exists() && root.child('mtChatV1/sessions').child($session).child('presentation/active').val() === true && root.child('mtChatV1/sessions').child($session).child('presentation/slideIndex').val() === 64 && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('control/phase').val() === 'open' && root.child('mtChatV1/sessions').child($session).child('reactionGame').child('contestants').child($team).child('participantId').val() === root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val() && newData.child('participantId').val() === root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()",
+                ".validate": "newData.hasChildren(['participantId','roundId','elapsedMs','submittedAt']) && newData.child('roundId').val() === root.child('mtChatV1/sessions').child($session).child('reactionGame').child('control/roundId').val()",
+                "participantId": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2"
+                },
+                "roundId": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20"
+                },
+                "submittedAt": {
+                  ".validate": "newData.isNumber() && (newData.val() === data.val() || newData.val() === now)"
+                },
+                "elapsedMs": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 86400000 && newData.val() % 1 === 0"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
             "result": {
               ".read": "((auth != null && root.child('mtChatV1/sessions').child($session).child('meta/ownerUid').val() === auth.uid) || (auth != null && !root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).exists() && root.child('mtChatV1/sessions').child($session).child('managerBinding/uid').val() === auth.uid && root.child('mtChatV1/sessions').child($session).child('managerDevices').child(auth.uid).child('nameKey').val() === root.child('mtChatV1/sessions').child($session).child('managerBinding/nameKey').val() && root.child('mtChatV1/sessions').child($session).child('managerLookup').child(root.child('mtChatV1/sessions').child($session).child('managerBinding/nameKey').val()).exists())) || (auth != null && root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).exists() && root.child('mtChatV1/sessions').child($session).child('bindings').child(root.child('mtChatV1/sessions').child($session).child('devices').child(auth.uid).child('participantId').val()).child('uid').val() === auth.uid)",
-              ".validate": "newData.hasChildren(['points','revealedAt']) && newData.parent().child('control/phase').val() === 'finished' && newData.parent().child('winner').exists()",
+              ".validate": "newData.hasChildren(['points','revealedAt']) && newData.parent().child('control/phase').val() === 'finished' && (newData.parent().child('winner').exists() || (newData.parent().child('control/localTiming').val() === true && newData.hasChild('elapsedMs')))",
+              "elapsedMs": {
+                "$team": {
+                  ".validate": "newData.isNumber() && newData.val() === newData.parent().parent().parent().child('submissions').child($team).child('elapsedMs').val()"
+                }
+              },
               "points": {
                 ".validate": "newData.hasChildren(['A','B','C','D'])",
                 "$team": {

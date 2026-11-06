@@ -61,10 +61,10 @@ export const STAGES = [
   { id: 'memory-select', screenCode: 61, game: 'memory', view: 'select', title: '카드 뒤집기 출전자', script: '각 조에서 새로운 출전자 한 명이 신청해주세요. 같은 출전자가 세 라운드 모두 도전합니다.' },
   { id: 'memory-play', screenCode: 62, game: 'memory', view: 'play', title: '카드 뒤집기 실시간 경기', script: '게임 시작을 누르면 모두 3초 동안 첫 배치를 확인합니다. 같은 카드를 찾으면 사라지고, 한 판을 끝내면 다음 라운드로 바로 넘어갑니다. 발표 화면에서 네 명의 플레이를 실시간으로 확인하세요.' },
   { id: 'memory-score', screenCode: 63, game: 'memory', view: 'score', title: '카드 뒤집기 최종 점수', script: '세 라운드를 완주한 순서대로 1위 200점, 2위 100점, 3위 50점입니다. 최종 누적 점수를 확인하겠습니다.' },
-  { id: 'reaction-intro', screenCode: 64, game: 'reaction', view: 'intro', title: '순발력 측정', script: '다음은 순발력 측정입니다. 각 조에서 이전 게임에 출전하지 않은 한 명이 신청해주세요. 검은 화면에서 기다리다가 지금 터치하세요라는 신호가 나오면 즉시 터치합니다. 서버에서 가장 먼저 확정된 터치의 팀에 100점을 드립니다.' },
+  { id: 'reaction-intro', screenCode: 64, game: 'reaction', view: 'intro', title: '순발력 측정', script: '다음은 순발력 측정입니다. 각 조에서 이전 게임에 출전하지 않은 한 명이 신청해주세요. 검은 화면에서 기다리다가 지금 터치하세요라는 신호가 나오면 즉시 터치합니다. 각 기기에 신호가 표시된 순간부터 터치까지의 반응 시간을 비교해 가장 빠른 팀에 100점을 드립니다. 밀리초 단위 동률은 모두 100점입니다.' },
   { id: 'reaction-select', screenCode: 65, game: 'reaction', view: 'select', title: '순발력 측정 출전자', script: '각 조에서 새로운 출전자 한 명이 신청해주세요. 한 명만 출전해도 테스트할 수 있습니다.' },
-  { id: 'reaction-play', screenCode: 66, game: 'reaction', view: 'play', title: '순발력 측정 진행', script: '출전자는 검은 화면에서 기다려주세요. 원하는 순간 터치 신호 보내기를 누르면 참가자 화면에 지금 터치하세요가 나타납니다. 가장 빠른 한 팀이 100점을 얻습니다.' },
-  { id: 'reaction-score', screenCode: 67, game: 'reaction', view: 'score', title: '순발력 측정 점수', script: '가장 먼저 터치한 팀에 100점을 합산합니다.' },
+  { id: 'reaction-play', screenCode: 66, game: 'reaction', view: 'play', title: '순발력 측정 진행', script: '출전자는 검은 화면에서 기다려주세요. 원하는 순간 터치 신호 보내기를 누르면 참가자 화면에 지금 터치하세요가 나타납니다. 모두 터치하면 기기에서 측정한 반응 시간이 가장 짧은 팀이 100점을 얻습니다.' },
+  { id: 'reaction-score', screenCode: 67, game: 'reaction', view: 'score', title: '순발력 측정 점수', script: '반응 시간이 가장 짧은 팀에 100점을 합산합니다. 동률인 팀은 모두 100점입니다.' },
 ];
 // Append new stages so stored slide indices and existing screen codes stay valid.
 const presentationOrder = STAGES.flatMap((stage, index) => {

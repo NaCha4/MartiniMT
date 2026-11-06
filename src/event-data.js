@@ -591,7 +591,7 @@ export async function prepareReactionGame(room, roster, resetAt = null) {
   const result = await transactLoaded(locationRef(room, 'reactionGame'), current => {
     if (current) return;
     if (!Object.keys(roster).some(id => !excluded[id])) throw { userMessage: '이전 게임에 출전하지 않은 참가자가 필요합니다.' };
-    return { control: { roundId, phase: 'selecting', resetAt, updatedAt: serverTimestamp() }, roster, excluded };
+    return { control: { roundId, phase: 'selecting', localTiming: true, resetAt, updatedAt: serverTimestamp() }, roster, excluded };
   });
   const game = result.snapshot.val();
   if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };
@@ -610,12 +610,20 @@ export async function signalReactionGame(room, roundId) {
   const result = await transactLoaded(locationRef(room, 'reactionGame'), current => {
     if (current?.control.roundId !== roundId || current.control.phase !== 'selecting') return;
     if (!Object.keys(current.contestants ?? {}).length) throw { userMessage: '출전자를 먼저 모집해주세요.' };
-    return { ...current, control: { ...current.control, phase: 'open', signaledAt: serverTimestamp(), updatedAt: serverTimestamp() } };
+    return { ...current, control: { ...current.control, phase: 'open', localTiming: true, signaledAt: serverTimestamp(), updatedAt: serverTimestamp() } };
   });
   if (!result.committed) throw { userMessage: '이미 신호를 보냈거나 진행이 초기화되었습니다.' };
 }
 
-export async function submitReactionTap(room, participantId, team, roundId) {
+export async function submitReactionTap(room, participantId, team, roundId, elapsedMs) {
+  if (elapsedMs !== undefined) {
+    if (!Number.isInteger(elapsedMs) || elapsedMs < 0 || elapsedMs > 86400000) throw { userMessage: '반응 시간을 확인해주세요.' };
+    const result = await transactLoaded(locationRef(room, `reactionGame/submissions/${team}`), current => current ? undefined
+      : { participantId, roundId, elapsedMs, submittedAt: serverTimestamp() });
+    const saved = result.snapshot.val();
+    if (saved?.roundId !== roundId || saved?.participantId !== participantId) throw { userMessage: '현재 제출 결과를 확인해주세요.' };
+    return;
+  }
   let result;
   try {
     result = await runTransaction(locationRef(room, 'reactionGame/winner'), current => current ? undefined
@@ -631,7 +639,8 @@ export async function submitReactionTap(room, participantId, team, roundId) {
 export async function awardReactionPoints(room) {
   const result = await transactLoaded(locationRef(room, 'reactionGame'), current => {
     if (!current || current.result) return;
-    return { ...current, control: { ...current.control, phase: 'finished', updatedAt: serverTimestamp() }, result: { points: reactionOutcome(current), revealedAt: serverTimestamp() } };
+    const elapsedMs = current.control.localTiming ? Object.fromEntries(Object.keys(current.contestants ?? {}).map(team => [team, current.submissions[team]?.elapsedMs])) : null;
+    return { ...current, control: { ...current.control, phase: 'finished', updatedAt: serverTimestamp() }, result: { points: reactionOutcome(current), elapsedMs, revealedAt: serverTimestamp() } };
   });
   const game = result.snapshot.val();
   if (!game?.result) throw { userMessage: '첫 터치 결과를 먼저 확인해주세요.' };

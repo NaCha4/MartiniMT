@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('reaction goes from black to signal, accepts pointerdown once, scores and resets for solo play', async ({ browser }) => {
+test('reaction compares local durations despite delayed signals and keeps scores idempotent', async ({ browser }) => {
   test.setTimeout(90000);
   const contexts = [];
   async function newPage() {
@@ -45,25 +45,32 @@ test('reaction goes from black to signal, accepts pointerdown once, scores and r
     await expect(first.locator('.reaction-tap')).toHaveCount(0);
     await first.locator('.reaction-black').click();
     await expect(host.locator('.reaction-winner')).toHaveCount(0);
+    await second.context().setOffline(true);
+    await first.waitForTimeout(200);
     await remote.getByRole('button', { name: '터치 신호 보내기', exact: true }).click();
     await expect(host.locator('.reaction-screen h1')).toHaveText('지금 터치하세요!');
     await expect(first.locator('.reaction-tap')).toBeEnabled();
-    await expect(second.locator('.reaction-tap')).toBeEnabled();
     await expect(spectator.locator('.reaction-tap')).toHaveCount(0);
-    await host.screenshot({ path: '.cache/reaction-signal.png' });
+    await first.waitForTimeout(500);
     const target = await first.locator('.reaction-tap').boundingBox();
     await first.mouse.move(target.x + target.width / 2, target.y + target.height / 2);
     await first.mouse.down();
-    await expect(host.locator('.reaction-winner h1')).toHaveText('1조');
+    await expect(first.getByRole('heading', { name: '제출 완료', exact: true })).toBeVisible();
     await first.mouse.up();
-    await expect(second.getByRole('heading', { name: '1조 승리', exact: true })).toBeVisible();
-    await second.evaluate(async () => {
-      const api = await import('/src/event-data.js'); const uid = await api.connect();
-      const room = new URL(location.href).searchParams.get('room');
-      const device = await api.read(room, `devices/${uid}`);
-      const control = await api.read(room, 'reactionGame/control');
-      await api.submitReactionTap(room, device.participantId, 'B', control.roundId);
+    await expect(host.locator('.reaction-results')).toHaveCount(0);
+    await expect(remote.locator('.remote-game-controls')).toContainText('1 / 2명 측정 완료');
+    await second.context().setOffline(false);
+    await expect(second.locator('.reaction-tap')).toBeEnabled();
+    await second.locator('.reaction-tap').click();
+    await expect(host.locator('.reaction-results')).toBeVisible();
+    const result = await host.evaluate(async () => {
+      const api = await import('/src/event-data.js'); await api.connect();
+      return api.read(localStorage.getItem('martini.host-room'), 'reactionGame');
     });
+    expect(result.submissions.A.submittedAt).toBeLessThanOrEqual(result.submissions.B.submittedAt);
+    expect(result.result.elapsedMs.B).toBeLessThan(result.result.elapsedMs.A);
+    expect(result.result.points).toEqual({ A: 0, B: 100, C: 0, D: 0 });
+    await host.screenshot({ path: '.cache/reaction-local-result.png' });
     await next();
     await expect(host.getByRole('heading', { name: '순발력 측정 점수', exact: true })).toBeVisible();
     const scores = await host.evaluate(async () => {
@@ -72,7 +79,7 @@ test('reaction goes from black to signal, accepts pointerdown once, scores and r
       await api.awardReactionPoints(room); await api.awardReactionPoints(room);
       return api.read(room, 'teamScores/totals');
     });
-    expect(scores).toEqual({ A: 100, B: 0, C: 0, D: 0 });
+    expect(scores).toEqual({ A: 0, B: 100, C: 0, D: 0 });
     await host.getByRole('button', { name: '초기화', exact: true }).click();
     await expect(host.locator('.presentation-screen-code')).toHaveText('1');
     await host.evaluate(async () => {
@@ -89,7 +96,7 @@ test('reaction goes from black to signal, accepts pointerdown once, scores and r
     await next();
     await remote.getByRole('button', { name: '터치 신호 보내기', exact: true }).click();
     await first.getByRole('button', { name: '지금 터치하세요!', exact: true }).click();
-    await expect(host.locator('.reaction-winner h1')).toHaveText('1조');
+    await expect(host.locator('.reaction-results [data-team="A"]')).toContainText('+100점');
     await next();
     await expect(host.locator('[data-score-team="A"]')).toHaveText('100');
   } finally { await Promise.all(contexts.map(context => context.close())); }
