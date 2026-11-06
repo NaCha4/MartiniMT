@@ -488,6 +488,8 @@ function joinNetworkView() {
 function presentationView() {
   const slide = STAGES[state.slideIndex];
   const resetControl = `<button class="button outline presentation-reset" data-action="reset" data-no-slide title="진행·투표·점수를 초기화하고 1번 화면으로 돌아갑니다" ${state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}>초기화</button>`;
+  const gameStarts = ['touch', 'taste-intro', 'soju-vote', 'military-vote', 'ox-intro', 'zoom-intro', 'liar-intro', 'stopwatch-intro', 'number-intro'];
+  const debugControls = `<nav class="presentation-debug-tools" data-no-slide aria-label="디버깅 이동">${resetControl}<select id="debug-game-jump" aria-label="게임 바로가기" title="선택한 게임의 시작 화면으로 이동합니다" ${state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}><option value="">게임 바로가기</option>${STAGES.map((stage, index) => gameStarts.includes(stage.id) ? `<option value="${index}">${stage.title}</option>` : '').join('')}</select></nav>`;
   const screenCode = state.winner ? slide.resultScreenCode ?? slide.screenCode : slide.screenCode;
   const screenLabel = import.meta.env.DEV ? `<span class="presentation-screen-code" aria-hidden="true">${screenCode}</span>` : '';
   const winnerElapsed = state.winner ? Math.max(0, performance.now() - state.winnerRevealedAt) : 0;
@@ -509,7 +511,7 @@ function presentationView() {
       <div class="race-copy">${message}</div>
     </section>`;
   }
-  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${resetControl}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
+  return `<div class="presentation" data-slide="${slide.id}" data-team="${state.winner?.team ?? ''}" style="--winner-delay: -${winnerElapsed}ms" aria-busy="${state.busy || state.controlsLocked}" aria-label="발표 화면. 좌클릭 다음, 우클릭 이전" tabindex="-1"><main class="presentation-main">${content}</main>${errorBanner()}${debugControls}${state.winner ? '' : fullscreenControl()}${screenLabel}</div>`;
 }
 
 function participantTasteView() {
@@ -1060,6 +1062,16 @@ async function stopwatchAction(name) {
 
 function bindEvents() {
   document.querySelectorAll('[data-action]').forEach(control => control.addEventListener('click', () => { void action(control.dataset.action, control.dataset.errorId); }));
+  $('#debug-game-jump')?.addEventListener('change', async event => {
+    const index = Number(event.target.value);
+    if (event.target.value === '' || !Number.isInteger(index) || !STAGES[index]
+      || state.role !== 'host' || !state.presenting || state.busy || state.controlsLocked || !state.online || document.hidden) return;
+    lockControls();
+    state.busy = true;
+    try { await moveTo(index); }
+    catch (error) { showError(error); }
+    finally { state.busy = false; schedule(); }
+  });
   for (const control of document.querySelectorAll('[data-vote], [data-ox-vote], [data-zoom-request], [data-liar-vote], [data-liar-action], [data-stopwatch-action], [data-number-action], [data-number-choice]')) {
     input.bindVote(control);
   }

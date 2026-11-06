@@ -369,7 +369,9 @@ dialog textarea { resize: vertical; }
 .presentation-title h1 { font-size: clamp(34px, 3.7vw, 64px); margin: 0 0 8px; }
 .presentation-title p { margin: 0; font-size: clamp(15px, 1.5vw, 22px); }
 .fullscreen-button { position: fixed; top: 22px; right: 24px; z-index: 10; min-height: 40px; padding: 8px 14px; background: var(--color-background) !important; }
-.presentation-reset { position: fixed; top: max(22px, env(safe-area-inset-top)); left: max(24px, env(safe-area-inset-left)); z-index: 10; min-height: 40px; padding: 8px 14px; background: var(--color-background) !important; }
+.presentation-debug-tools { position: fixed; top: max(22px, env(safe-area-inset-top)); left: max(24px, env(safe-area-inset-left)); z-index: 10; display: flex; align-items: center; gap: 8px; }
+.presentation-reset { min-height: 40px; padding: 8px 14px; background: var(--color-background) !important; }
+.presentation-debug-tools select { min-height: 40px; max-width: min(220px, 38vw); padding: 8px 12px; border-color: var(--color-highlight-border); background: var(--color-background); font-size: 14px; cursor: pointer; }
 .presentation > .error-banner { position: fixed; top: max(78px, calc(env(safe-area-inset-top) + 56px)); left: max(24px, env(safe-area-inset-left)); right: max(24px, env(safe-area-inset-right)); z-index: 20; margin: 0; background: var(--color-panel); }
 .presentation-screen-code {
   position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom));
