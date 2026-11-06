@@ -17,9 +17,9 @@ test('stopwatch appends four stages after liar while retaining stored stage indi
 });
 
 test('stopwatch supports one to four entrants, exact ties, and rejects incomplete or stale submissions', () => {
-  assert.deepEqual(stopwatchOutcome(game({ A: 12345 })).points, { A: 100, B: 0, C: 0, D: 0 });
-  assert.deepEqual(stopwatchOutcome(game({ A: 9900, B: 10100, C: 11000, D: 9000 })).points, { A: 100, B: 100, C: 0, D: 0 });
-  assert.deepEqual(stopwatchOutcome(game({ A: 10000, B: 10000 })).points, { A: 100, B: 100, C: 0, D: 0 });
+  assert.deepEqual(stopwatchOutcome(game({ A: 12345 })).points, { A: 200, B: 0, C: 0, D: 0 });
+  assert.deepEqual(stopwatchOutcome(game({ A: 9900, B: 10100, C: 11000, D: 9000 })).points, { A: 200, B: 200, C: 0, D: 0 });
+  assert.deepEqual(stopwatchOutcome(game({ A: 10000, B: 10000 })).points, { A: 200, B: 200, C: 0, D: 0 });
   for (const value of [game({}), game({ A: null }), game({ A: 9900, B: null }), game({ A: 999 }), game({ A: 10000.5 })]) {
     assert.equal(stopwatchSubmitted(value), false);
     assert.throws(() => stopwatchOutcome(value));
@@ -35,7 +35,7 @@ test('hundredth-second rounding drives display, local measurements and ties for 
   assert.equal(formatStopwatchTime(10005), '10.01');
   assert.equal(roundStopwatchMs(9876.2), 9880);
   const rounded = stopwatchOutcome(game({ A: 9987, B: 10011, C: 12004 }));
-  assert.deepEqual(rounded.points, { A: 100, B: 100, C: 0, D: 0 });
+  assert.deepEqual(rounded.points, { A: 200, B: 200, C: 0, D: 0 });
   assert.equal(rounded.elapsedMs.A, 9987);
   let now = 0;
   const clock = createStopwatchClock({ now: () => now });
@@ -85,7 +85,7 @@ test('presentation and remote hide times until manual reveal and wait for actual
   const finished = stopwatchPresentation(active, slide, 1000 + STOPWATCH_REVEAL_DURATION);
   assert.match(finished, /9\.88/);
   assert.match(finished, /is-settled/);
-  assert.match(finished, /\+100점/);
+  assert.match(finished, /\+200점/);
 });
 
 test('participant excludes liar players and only exposes a stop button after the local delay', () => {

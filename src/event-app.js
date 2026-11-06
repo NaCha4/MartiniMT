@@ -498,7 +498,7 @@ function presentationView() {
     content = joinNetworkView();
   } else if (state.slideIndex >= 2) {
     if (slide.game === 'number') content = slide.view === 'score' ? scorePresentation(state.numberGame.rounds?.[slide.questionIndex]?.roundId, numberResultCaption(state.numberGame, slide.questionIndex)) : numberPresentation(state.numberGame, slide, Date.now() + state.serverOffset);
-    else if (slide.game === 'stopwatch') content = slide.view === 'score' ? scorePresentation(state.stopwatchGame.control?.roundId, '<header class="liar-result"><h1>인간스톱워치 점수</h1><p>10초에 가장 가까운 팀 +100점 · 동률 모두 +100점</p></header>') : stopwatchPresentation(state.stopwatchGame, slide, Date.now() + state.serverOffset);
+    else if (slide.game === 'stopwatch') content = slide.view === 'score' ? scorePresentation(state.stopwatchGame.control?.roundId, '<header class="liar-result"><h1>인간스톱워치 점수</h1><p>10초에 가장 가까운 팀 +200점 · 동률 모두 +200점</p></header>') : stopwatchPresentation(state.stopwatchGame, slide, Date.now() + state.serverOffset);
     else if (slide.game === 'liar') content = slide.view === 'score' ? scorePresentation(state.liarGame.rounds?.[slide.questionIndex]?.roundId, liarResultCaption(state.liarGame, slide.questionIndex)) : liarPresentation(state.liarGame, slide, Date.now() + state.serverOffset);
     else if (slide.game === 'zoom') content = slide.view === 'score' ? scorePresentation(state.zoomGame.control?.roundId) : zoomPresentation(state.zoomGame, state.zoomQuestions ?? DEFAULT_ZOOM_QUESTIONS, slide, Date.now() + state.serverOffset);
     else content = slide.game === 'ox' ? oxPresentation(slide) : tastePresentation(slide);

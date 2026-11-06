@@ -33,7 +33,7 @@ export function stopwatchOutcome(game) {
   const elapsedMs = Object.fromEntries(Object.keys(game.contestants).map(team => [team, game.submissions[team].elapsedMs]));
   const closest = Math.min(...Object.values(elapsedMs).map(value => Math.abs(roundStopwatchMs(value) - STOPWATCH_TARGET_MS)));
   const points = emptyScores();
-  for (const team of TEAM_IDS) if (Math.abs(roundStopwatchMs(elapsedMs[team]) - STOPWATCH_TARGET_MS) === closest) points[team] = 100;
+  for (const team of TEAM_IDS) if (Math.abs(roundStopwatchMs(elapsedMs[team]) - STOPWATCH_TARGET_MS) === closest) points[team] = 200;
   return { elapsedMs, points };
 }
 

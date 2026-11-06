@@ -47,10 +47,10 @@ export const STAGES = [
     { id: `liar-play-${questionIndex + 1}`, screenCode: 40 + questionIndex * 3, game: 'liar', view: 'play', questionIndex, title: `라이어 ${questionIndex + 1}라운드`, script: '단어 전달을 누르면 출전자 중 한 명이 무작위 라이어가 됩니다. 출전자들은 휴대폰을 확인해주세요. 진행자가 한 명씩 차례로 묘사를 시킨 뒤 투표를 시작합니다. 출전자는 투표에 참여하지 않습니다. 투표 종료 후 득표를 확인하고 정답 공개를 눌러주세요. 라이어 공개가 끝나면 점수로 이동합니다.' },
     { id: `liar-score-${questionIndex + 1}`, screenCode: 41 + questionIndex * 3, game: 'liar', view: 'score', questionIndex, title: `라이어 ${questionIndex + 1}라운드 점수`, script: '라이어 적발 여부에 따른 점수를 합산하고 현재 순위를 확인하겠습니다.' },
   ]).flat(),
-  { id: 'stopwatch-intro', screenCode: 48, game: 'stopwatch', view: 'intro', title: '인간스톱워치', script: '다음 게임은 인간스톱워치입니다. 각 조 6명 중 라이어게임에 출전하지 않은 한 명이 출전합니다. 카운트 시작을 누르고 마음속으로 10초를 센 뒤 카운트 종료를 눌러주세요. 10초에 가장 가까운 팀에 100점, 동률이면 해당 팀 모두 100점입니다.' },
+  { id: 'stopwatch-intro', screenCode: 48, game: 'stopwatch', view: 'intro', title: '인간스톱워치', script: '다음 게임은 인간스톱워치입니다. 각 조 6명 중 라이어게임에 출전하지 않은 한 명이 출전합니다. 카운트 시작을 누르고 마음속으로 10초를 센 뒤 카운트 종료를 눌러주세요. 10초에 가장 가까운 팀에 200점, 동률이면 해당 팀 모두 200점입니다.' },
   { id: 'stopwatch-select', screenCode: 49, game: 'stopwatch', view: 'select', title: '인간스톱워치 출전자', script: '각 조에서 라이어게임에 출전하지 않은 한 명이 출전을 신청해주세요. 테스트할 때는 한 명만 출전해도 다음으로 진행할 수 있습니다.' },
   { id: 'stopwatch-play', screenCode: 50, game: 'stopwatch', view: 'play', title: '인간스톱워치 진행', script: '게임 시작을 누르면 출전자에게 카운트 시작 버튼이 나타납니다. 각자 시작한 순간부터 10초를 세어 종료해주세요. 모든 출전자가 제출하면 결과 공개를 눌러 기록을 한 번에 공개합니다.' },
-  { id: 'stopwatch-score', screenCode: 51, game: 'stopwatch', view: 'score', title: '인간스톱워치 점수', script: '10초에 가장 가까운 팀에 100점을 더합니다. 동률이면 해당 팀 모두에게 100점을 더합니다.' },
+  { id: 'stopwatch-score', screenCode: 51, game: 'stopwatch', view: 'score', title: '인간스톱워치 점수', script: '10초에 가장 가까운 팀에 200점을 더합니다. 동률이면 해당 팀 모두에게 200점을 더합니다.' },
   { id: 'number-intro', screenCode: 52, game: 'number', view: 'intro', title: '눈치보고 숫자 고르기', script: '다음 게임은 눈치보고 숫자 고르기입니다. 라이어와 인간스톱워치에 출전하지 않은 사람 중 각 조 한 명이 출전합니다. 1부터 10까지 숫자를 비밀리에 선택합니다. 중복 숫자는 탈락하고, 남은 숫자 중 가장 높은 숫자를 고른 팀이 숫자 곱하기 20점을 받습니다. 같은 출전자로 세 번 진행하며 매 라운드 모두 다시 참여합니다. 모두 중복이면 해당 라운드는 무득점입니다.' },
   { id: 'number-select', screenCode: 53, game: 'number', view: 'select', questionIndex: 0, title: '눈치 게임 출전자', script: '라이어와 인간스톱워치에 출전하지 않은 분 중 각 조 한 명이 출전해주세요. 이번 출전자로 세 라운드를 진행합니다.' },
   ...Array.from({ length: 3 }, (_, questionIndex) => [
