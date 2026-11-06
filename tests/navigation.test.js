@@ -64,7 +64,7 @@ test('direct host clicks traverse every presentation screen without votes, quest
     assert.equal(screen.state.slideIndex, next);
     visited.push(next);
   }
-  assert.equal(STAGES[visited.at(-1)].id, 'reaction-score');
+  assert.equal(STAGES[visited.at(-1)].id, 'award-4');
   assert.ok(visited.some(index => STAGES[index].view === 'survivors'));
   assert.equal(screen.calls.length, visited.length - 1);
   assert.ok(screen.calls.every(([method, room, , resetAt]) => method === 'slide' && room === 'test-room' && resetAt === 123));

@@ -8,6 +8,7 @@ import { WHISKY_OPTIONS, SOJU_OPTIONS, MILITARY_OPTIONS } from '../src/taste-mod
 import { STAGES } from '../src/event-model.js';
 import { emptyOxQuestions } from '../src/ox-model.js';
 import { LIAR_PROMPTS } from '../src/liar-prompts.js';
+import { createYutPieces, yutPoints } from '../src/yut-model.js';
 
 if (process.env.FIREBASE_DATABASE_EMULATOR_HOST !== '127.0.0.1:9000') throw new Error('Only local emulator tests are permitted.');
 const room = 's'.repeat(20), path = `mtChatV1/sessions/${room}`;
@@ -475,6 +476,23 @@ test('24 participants and 1 host receive concurrent messages without loss', { ti
 async function configureManager() {
   await set(location(db('host'), 'managerLookup'), { [nameKey('진행자')]: { name: '진행자' } });
 }
+
+test('yut board and winner are controller-only, validated, and bound to the current reset', async () => {
+  await create(); await configureManager(); await claimManager('manager'); await claim('alice', 'A1');
+  const game = { control: { roundId: 'y'.repeat(20), phase: 'playing', updatedAt: serverTimestamp() }, pieces: createYutPieces() };
+  await assertSucceeds(set(location(db('host'), 'yutGame'), game));
+  await assertSucceeds(get(location(db('manager'), 'yutGame')));
+  await assertFails(get(location(db('alice'), 'yutGame')));
+  await assertFails(update(location(db('alice'), 'yutGame/pieces/A1'), { x: 500 }));
+  await assertFails(update(location(db('manager'), 'yutGame/pieces/A1'), { x: 2000 }));
+  await assertFails(update(location(db('manager'), 'yutGame/pieces/A1'), { other: true }));
+  await assertSucceeds(update(location(db('manager'), 'yutGame/pieces/A1'), { x: 500, y: 340 }));
+  const finished = { ...game, control: { ...game.control, phase: 'finished' }, result: { winnerTeam: 'B', points: yutPoints('B'), revealedAt: serverTimestamp() } };
+  await assertFails(set(location(db('alice'), 'yutGame'), finished));
+  await assertSucceeds(set(location(db('manager'), 'yutGame'), finished));
+  await assertFails(update(location(db('manager'), 'yutGame/result'), { winnerTeam: 'C', points: yutPoints('C') }));
+  await assertFails(update(location(db('host'), 'yutGame/control'), { resetAt: 123 }));
+});
 const claimManager = (uid, name = '진행자') => update(location(db(uid)), {
   managerBinding: { uid, nameKey: nameKey(name), claimedAt: serverTimestamp() },
   [`managerDevices/${uid}`]: { nameKey: nameKey(name) },

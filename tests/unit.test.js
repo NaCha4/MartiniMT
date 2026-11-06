@@ -4,6 +4,7 @@ import './stopwatch.test.js';
 import './number.test.js';
 import './memory.test.js';
 import './reaction.test.js';
+import './yut.test.js';
 import './vote-input.test.js';
 import './subscription-group.test.js';
 import './app-lifecycle.test.js';

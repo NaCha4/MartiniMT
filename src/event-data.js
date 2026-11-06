@@ -12,6 +12,7 @@ import { stopwatchOutcome, stopwatchRevealFinished, STOPWATCH_MIN_MS, STOPWATCH_
 import { NUMBER_ROUNDS, NUMBER_VALUES, numberExcludedIds, numberOutcome, numberRevealFinished } from './number-model.js';
 import { memoryExcludedIds, memoryOutcome } from './memory-model.js';
 import { reactionExcludedIds, reactionOutcome } from './reaction-model.js';
+import { createYutPieces, moveYutPiece, splitYutStack, yutPoints } from './yut-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 export const fixedRoom = emulator ? import.meta.env.VITE_FIXED_EVENT_ROOM || null : SINGLE_EVENT_ROOM;
@@ -85,6 +86,7 @@ export function resetPresentation(room) {
     numberGame: null,
     memoryGame: null,
     reactionGame: null,
+    yutGame: null,
   };
   for (const { path } of Object.values(TASTE_ROUNDS)) changes[path] = null;
   return update(locationRef(room), changes);
@@ -653,6 +655,45 @@ export async function awardReactionPoints(room) {
     return { ...scoreAward(current, game.control.roundId, game.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
   });
   return scores.snapshot.val();
+}
+
+export async function prepareYutGame(room, resetAt = null) {
+  const roundId = push(locationRef(room, 'yutGame')).key;
+  const result = await transactLoaded(locationRef(room, 'yutGame'), current => current ? undefined : {
+    control: { roundId, phase: 'playing', resetAt, updatedAt: serverTimestamp() },
+    pieces: createYutPieces(),
+  });
+  const game = result.snapshot.val();
+  if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };
+  return game;
+}
+
+export async function moveYutToken(room, roundId, id, position, split = false) {
+  const result = await transactLoaded(locationRef(room, 'yutGame'), current => {
+    if (current?.control.roundId !== roundId || current.control.phase !== 'playing') return;
+    const pieces = split ? splitYutStack(current.pieces, id) : moveYutPiece(current.pieces, id, position).pieces;
+    return { ...current, pieces, control: { ...current.control, updatedAt: serverTimestamp() } };
+  });
+  if (!result.committed) throw { userMessage: '윷놀이 진행 상태가 바뀌었습니다. 현재 화면을 확인해주세요.' };
+  return result.snapshot.val();
+}
+
+export async function finishYutGame(room, roundId, team) {
+  const points = yutPoints(team);
+  const result = await transactLoaded(locationRef(room, 'yutGame'), current => {
+    if (current?.control.roundId !== roundId || current.result) return;
+    return {
+      ...current, control: { ...current.control, phase: 'finished', updatedAt: serverTimestamp() },
+      result: { winnerTeam: team, points, revealedAt: serverTimestamp() },
+    };
+  });
+  const game = result.snapshot.val();
+  if (!game?.result || game.control.roundId !== roundId) throw { userMessage: '윷놀이 승리 팀을 먼저 선택해주세요.' };
+  const scores = await transactLoaded(locationRef(room, 'teamScores'), current => {
+    if (current?.awards?.[roundId]) return;
+    return { ...scoreAward(current, roundId, game.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
+  });
+  return { game, scores: scores.snapshot.val() };
 }
 
 export async function claimParticipant(room, id, uid) {

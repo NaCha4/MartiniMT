@@ -66,6 +66,10 @@ export const STAGES = [
   { id: 'reaction-select', screenCode: 65, game: 'reaction', view: 'select', title: '순발력 측정 출전자', script: '각 조에서 새로운 출전자 한 명이 신청해주세요. 한 명만 출전해도 테스트할 수 있습니다.' },
   { id: 'reaction-play', screenCode: 66, game: 'reaction', view: 'play', title: '순발력 측정 진행', script: '출전자는 검은 화면에서 기다려주세요. 원하는 순간 터치 신호 보내기를 누르면 참가자 화면에 지금 터치하세요가 나타납니다. 모두 터치하면 기기에서 측정한 반응 시간이 가장 짧은 팀이 100점을 얻습니다.' },
   { id: 'reaction-score', screenCode: 67, game: 'reaction', view: 'score', title: '순발력 측정 점수', script: '반응 시간이 가장 짧은 팀에 100점을 합산합니다. 동률인 팀은 모두 100점입니다.' },
+  { id: 'yut-intro', screenCode: 68, game: 'yut', view: 'intro', title: '윷놀이', script: '마지막 게임은 윷놀이입니다. 실제 윷을 던지고 진행자가 마우스로 말을 옮깁니다. 같은 팀 말 위에 놓으면 업고, 상대 말 위에 놓으면 잡습니다. 승리 팀에 300점을 더합니다.' },
+  { id: 'yut-board', screenCode: 69, game: 'yut', view: 'play', title: '윷놀이 판', script: '말을 드래그해서 자유롭게 옮깁니다. 업은 말은 함께 움직이며 오른쪽 클릭하면 하나씩 분리됩니다. 게임이 끝나면 리모컨에서 승리 팀을 선택해주세요.' },
+  { id: 'final-ranking', screenCode: 70, game: 'yut', view: 'score', duration: 7000, title: '최종 순위', script: '윷놀이 승리 팀에 300점을 더했습니다. 오늘의 최종 순위를 공개합니다. 이어서 네 팀의 시상을 진행합니다.' },
+  ...Array.from({ length: 4 }, (_, awardIndex) => ({ id: `award-${awardIndex + 1}`, screenCode: 71 + awardIndex, game: 'yut', view: 'award', awardIndex, duration: 6000, title: `${awardIndex + 1}번째 팀 시상`, script: '오늘 함께한 팀에게 박수 부탁드립니다. 동점 팀은 공동 순위이며 조 번호 순서로 시상합니다.' })),
 ];
 // Append new stages so stored slide indices and existing screen codes stay valid.
 const presentationOrder = STAGES.flatMap((stage, index) => {

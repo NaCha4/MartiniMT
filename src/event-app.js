@@ -20,6 +20,9 @@ import { MEMORY_PREVIEW_MS, memoryPlayer, memoryCanFlip, memoryStandings, memory
 import { memoryControls, memoryPresentation, memoryParticipant } from './memory-view.js';
 import { reactionControls, reactionPresentation, reactionParticipant } from './reaction-view.js';
 import { createReactionClock, reactionSubmitted } from './reaction-model.js';
+import { yutControls, yutPresentation, yutAward } from './yut-view.js';
+import { bindYutBoard } from './yut-board.js';
+import { moveYutPiece, splitYutStack } from './yut-model.js';
 import peatImage from './assets/whisky/peat.jpg';
 import sherryImage from './assets/whisky/sherry.jpg';
 import bourbonImage from './assets/whisky/bourbon.jpg';
@@ -85,6 +88,7 @@ const state = {
   numberGame: {}, numberReady: false, numberConfirm: false, numberChoice: null,
   memoryGame: {}, memoryReady: false, memoryConfirm: false,
   reactionGame: {}, reactionReady: false, reactionConfirm: false,
+  yutGame: {}, yutMoving: false,
 };
 let stopwatchStorage;
 try { stopwatchStorage = window.sessionStorage; } catch { /* Timing can continue in memory. */ }
@@ -103,6 +107,7 @@ let zoomTimer, zoomAdvancing = false, zoomRetryAt = 0;
 let liarTimer, liarAdvancing = false, liarPendingId, liarRetryAt = 0;
 let memoryTimer, memoryAdvancing = false, memoryRetryAt = 0;
 let zoomEditing = false;
+let yutDragging = false, yutTimer, yutAdvancing = false, yutRetryAt = 0;
 window.addEventListener('blur', () => { zoomEditing = false; schedule(); });
 let gameWatchKey;
 const watchRoom = (path, onValue, onError) => api.watch(state.room, path, onValue, onError);
@@ -128,7 +133,7 @@ const input = createInputController({
   onChange: schedule,
 });
 
-function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = null; if (!composing && !input.active && !zoomEditing) render(); }); }
+function schedule() { if (!frame) frame = requestAnimationFrame(() => { frame = null; if (!composing && !input.active && !zoomEditing && !yutDragging) render(); }); }
 function relayOperatorError(message) {
   if (state.role === 'host' && state.presenting && state.room) {
     // Keep the original local error if its delivery also fails.
@@ -258,10 +263,11 @@ function errorBanner() {
 function tasteContext(index = state.presentation?.slideIndex ?? state.slideIndex) {
   const slide = STAGES[index];
   const key = slide?.game ?? 'whisky';
-  return { key, slide, game: key === 'ox' ? state.oxGame : key === 'zoom' ? state.zoomGame : key === 'liar' ? state.liarGame : key === 'stopwatch' ? state.stopwatchGame : key === 'number' ? state.numberGame : key === 'memory' ? state.memoryGame : key === 'reaction' ? state.reactionGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
+  return { key, slide, game: key === 'ox' ? state.oxGame : key === 'zoom' ? state.zoomGame : key === 'liar' ? state.liarGame : key === 'stopwatch' ? state.stopwatchGame : key === 'number' ? state.numberGame : key === 'memory' ? state.memoryGame : key === 'reaction' ? state.reactionGame : key === 'yut' ? state.yutGame : state.tasteGames[key] ?? {}, votes: state.tasteVotes[key] ?? {} };
 }
 function nextBlocked() {
   const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.game === 'yut') return slide.view === 'play' ? !game?.result : stageIndex(state.slideIndex, 1) === state.slideIndex;
   if (slide.game === 'reaction') {
     if (slide.view === 'select') return !Object.keys(game.contestants ?? {}).length;
     if (slide.view === 'play') return game.control?.localTiming ? !game.result : !game.winner;
@@ -307,6 +313,7 @@ function nextBlocked() {
 
 function tasteControls(disabled) {
   const { slide, game } = tasteContext(state.slideIndex);
+  if (slide.game === 'yut') return yutControls(game, slide, disabled);
   if (slide.game === 'reaction') return reactionControls(game, slide, disabled);
   if (slide.game === 'memory') return memoryControls(game, slide, disabled);
   if (slide.game === 'number') return numberControls(game, slide, disabled);
@@ -519,7 +526,7 @@ function joinNetworkView() {
 function presentationView() {
   const slide = STAGES[state.slideIndex];
   const resetControl = `<button class="button outline presentation-reset" data-action="reset" data-no-slide title="진행·투표·점수를 초기화하고 1번 화면으로 돌아갑니다" ${state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}>초기화</button>`;
-  const gameStarts = ['touch', 'taste-intro', 'soju-vote', 'military-vote', 'ox-intro', 'zoom-intro', 'liar-intro', 'stopwatch-intro', 'number-intro', 'memory-intro', 'reaction-intro'];
+  const gameStarts = ['touch', 'taste-intro', 'soju-vote', 'military-vote', 'ox-intro', 'zoom-intro', 'liar-intro', 'stopwatch-intro', 'number-intro', 'memory-intro', 'reaction-intro', 'yut-intro'];
   const debugControls = `<nav class="presentation-debug-tools" data-no-slide aria-label="디버깅 이동">${resetControl}<select id="debug-game-jump" aria-label="게임 바로가기" title="선택한 게임의 시작 화면으로 이동합니다" ${state.busy || state.controlsLocked || !state.online ? 'disabled' : ''}><option value="">게임 바로가기</option>${STAGES.map((stage, index) => gameStarts.includes(stage.id) ? `<option value="${index}">${stage.title}</option>` : '').join('')}</select></nav>`;
   const screenCode = state.winner ? slide.resultScreenCode ?? slide.screenCode : slide.screenCode;
   const screenLabel = import.meta.env.DEV ? `<span class="presentation-screen-code" aria-hidden="true">${screenCode}</span>` : '';
@@ -528,7 +535,12 @@ function presentationView() {
   if (slide.id === 'join') {
     content = joinNetworkView();
   } else if (state.slideIndex >= 2) {
-    if (slide.game === 'reaction') content = slide.view === 'score' ? scorePresentation(state.reactionGame.control?.roundId, '<header class="liar-result"><h1>순발력 측정 점수</h1><p>가장 빠른 팀 +100점</p></header>') : reactionPresentation(state.reactionGame, slide);
+    if (slide.game === 'yut') {
+      if (slide.view === 'score') content = scorePresentation(state.yutGame.control?.roundId, `<header class="liar-result"><h1>최종 순위</h1><p>${state.yutGame.result ? `${TEAM_NAMES[state.yutGame.result.winnerTeam]} 윷놀이 우승 · +300점` : '오늘의 최종 점수'}</p></header>`);
+      else if (slide.view === 'award') content = yutAward(state.teamScores, slide.awardIndex, Date.now() + state.serverOffset - (state.presentation?.updatedAt ?? Date.now()));
+      else content = yutPresentation(state.yutGame, slide, state.busy || state.yutMoving || !state.online);
+    }
+    else if (slide.game === 'reaction') content = slide.view === 'score' ? scorePresentation(state.reactionGame.control?.roundId, '<header class="liar-result"><h1>순발력 측정 점수</h1><p>가장 빠른 팀 +100점</p></header>') : reactionPresentation(state.reactionGame, slide);
     else if (slide.game === 'memory') content = slide.view === 'score' ? scorePresentation(state.memoryGame.control?.roundId, '<header class="liar-result"><h1>카드 뒤집기 최종 점수</h1><p>완주 순서대로 150점 · 100점 · 50점</p></header>') : memoryPresentation(state.memoryGame, slide, Date.now() + state.serverOffset);
     else if (slide.game === 'number') content = slide.view === 'score' ? scorePresentation(state.numberGame.rounds?.[slide.questionIndex]?.roundId, numberResultCaption(state.numberGame, slide.questionIndex)) : numberPresentation(state.numberGame, slide, Date.now() + state.serverOffset);
     else if (slide.game === 'stopwatch') content = slide.view === 'score' ? scorePresentation(state.stopwatchGame.control?.roundId, '<header class="liar-result"><h1>인간스톱워치 점수</h1><p>10초에 가장 가까운 팀 +100점 · 동률 모두 +100점</p></header>') : stopwatchPresentation(state.stopwatchGame, slide, Date.now() + state.serverOffset);
@@ -582,6 +594,7 @@ function participantView() {
   if (!state.participant) return `<main class="mobile-join"><div class="join-copy"><h1>${managementEntry ? '행사 관리자 입장' : '참가자 입장'}</h1><p>${managementEntry ? '등록된 관리자 이름으로 같은 행사에 접속합니다.' : '등록된 이름을 입력하세요.'}</p></div><div class="join-fields">${errorBanner()}<form id="name-form"><label for="real-name">${managementEntry ? '관리자 이름' : '이름'}</label><input id="real-name" maxlength="24" placeholder="${managementEntry ? '등록된 관리자 이름' : '실명 입력'}" autocomplete="name" value="${escape(state.name)}" required/>${state.choices ? `<label for="person-choice">동명이인이 있습니다. 조를 선택하세요.</label><select id="person-choice">${Object.entries(state.choices).map(([id, person]) => `<option value="${id}">${TEAM_NAMES[id[0]]} · ${escape(person.name)}</option>`).join('')}</select>` : ''}<button class="button dark" type="submit" ${state.busy || !state.ready ? 'disabled' : ''}>${state.busy ? '연결 중…' : '입장'}</button></form></div></main>`;
   if (state.presentation?.active && state.presentation.slideIndex >= 2) {
     const slide = STAGES[state.presentation.slideIndex];
+    if (slide.game === 'yut') return `<main class="controller-main" data-team="${state.participant.team}">${errorBanner()}<section class="waiting-card"><span class="controller-identity">${TEAM_NAMES[state.participant.team]} · ${escape(state.participant.name)}</span><h1>${slide.view === 'play' ? '윷놀이 진행 중' : ['score', 'award'].includes(slide.view) ? '최종 시상' : '윷놀이'}</h1><p>발표 화면을 확인해주세요.</p></section></main>`;
     if (slide.game === 'reaction') return reactionParticipant({ game: state.reactionGame, slide, participant: state.participant, participantId: state.participantId, ready: state.reactionReady, disabled: state.busy || state.voting || (!state.online && (slide.view !== 'play' || !['selecting', 'open'].includes(state.reactionGame.control?.phase))) || state.controlsLocked, confirming: state.reactionConfirm, attempt: reactionClock.read(reactionKey()), error: errorBanner() });
     if (slide.game === 'memory') return memoryParticipant({ game: state.memoryGame, slide, participant: state.participant, participantId: state.participantId, ready: state.memoryReady, disabled: state.voting || !state.online || state.controlsLocked, confirming: state.memoryConfirm, error: errorBanner(), now: Date.now() + state.serverOffset });
     if (slide.game === 'number') return numberParticipant({ game: state.numberGame, slide, participant: state.participant, participantId: state.participantId, ready: state.numberReady, disabled: state.busy || state.voting || !state.online || state.controlsLocked, confirming: state.numberConfirm, choice: state.numberChoice, error: errorBanner(), now: Date.now() + state.serverOffset });
@@ -612,6 +625,7 @@ function render() {
   // Replacing a focused native select closes its open option list.
   if (document.activeElement?.id === 'debug-game-jump') return;
   const previousPhoto = $('.zoom-photo');
+  const previousYutBoard = $('[data-yut-board]');
   const previousQuestion = previousPhoto?.closest('[data-question]')?.dataset.question;
   const focused = document.activeElement, focusId = focused?.id;
   const selection = Number.isInteger(focused?.selectionStart) ? [focused.selectionStart, focused.selectionEnd] : null;
@@ -624,6 +638,8 @@ function render() {
   document.body.classList.toggle('is-controller', state.role !== 'host' && interactionLocked());
   document.documentElement.classList.toggle('is-interacting', interactionLocked());
   $('#app').innerHTML = state.role === 'host' ? hostView() : participantView();
+  const nextYutBoard = $('[data-yut-board]');
+  if (previousYutBoard && nextYutBoard && previousYutBoard.dataset.yutRound === nextYutBoard.dataset.yutRound) nextYutBoard.replaceWith(previousYutBoard);
   const nextPhoto = $('.zoom-photo');
   if (previousPhoto && nextPhoto && previousPhoto.src === nextPhoto.src && previousQuestion === nextPhoto.closest('[data-question]')?.dataset.question) {
     const style = nextPhoto.style.cssText;
@@ -632,6 +648,13 @@ function render() {
     previousPhoto.style.cssText = style;
   }
   bindEvents();
+  bindYutBoard(document, {
+    getGame: () => state.yutGame,
+    disabled: state.busy || state.yutMoving || !state.online,
+    onDrag: active => { yutDragging = active; if (!active) schedule(); },
+    onMove: (id, position) => moveYut(id, position),
+    onSplit: id => moveYut(id, null, true),
+  });
   const currentScript = $('#manager-script');
   if (currentScript && currentScript.dataset.scriptId === scriptPosition?.id) currentScript.scrollTop = scriptPosition.scroll;
   for (const canvas of document.querySelectorAll('.invite-qr')) QRCode.toCanvas(canvas, inviteUrl(), { width: 420, margin: 4, color: { dark: '#08121C', light: '#ffffff' } }).catch(() => {});
@@ -669,6 +692,7 @@ function render() {
   scheduleZoomProgress();
   scheduleLiarProgress();
   scheduleMemoryProgress();
+  scheduleYutCeremony();
   // render runs in requestAnimationFrame. Start beside the newly drawn cue,
   // before this frame is painted, using only this device's monotonic clock.
   if (!document.hidden && state.role === 'participant' && $('.reaction-tap:not(:disabled)')) reactionClock.start(reactionKey());
@@ -753,7 +777,13 @@ async function moveTo(index, { skipGame = false } = {}) {
     chooseWinner();
   } else {
     const { key, slide } = tasteContext(index);
-    if (key === 'reaction') {
+    if (key === 'yut') {
+      state.yutGame = await api.prepareYutGame(state.room, resetAt);
+      if (slide.view === 'score' && state.yutGame.result) {
+        const result = await api.finishYutGame(state.room, state.yutGame.control.roundId, state.yutGame.result.winnerTeam);
+        state.teamScores = result.scores;
+      }
+    } else if (key === 'reaction') {
       if (slide.view === 'select') state.reactionGame = await api.prepareReactionGame(state.room, state.participants, resetAt);
       if (slide.view === 'score') state.teamScores = await api.awardReactionPoints(state.room);
     } else if (key === 'memory') {
@@ -992,6 +1022,42 @@ async function readZoomImage(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+async function moveYut(id, position, split = false) {
+  if (state.role !== 'host' || state.yutMoving || !state.online || state.yutGame.control?.phase !== 'playing') return;
+  const roundId = state.yutGame.control.roundId;
+  const previous = state.yutGame;
+  state.yutMoving = true;
+  try {
+    state.yutGame = { ...previous, pieces: split ? splitYutStack(previous.pieces, id) : moveYutPiece(previous.pieces, id, position).pieces };
+    schedule();
+    const game = await api.moveYutToken(state.room, roundId, id, position, split);
+    if (state.yutGame.control?.roundId === roundId) state.yutGame = game;
+  } catch (error) {
+    if (state.yutGame.control?.roundId === roundId) state.yutGame = await api.read(state.room, 'yutGame').catch(() => previous) ?? previous;
+    showError(error);
+  }
+  finally { state.yutMoving = false; schedule(); }
+}
+
+function scheduleYutCeremony() {
+  clearTimeout(yutTimer);
+  const slide = STAGES[state.slideIndex];
+  const roundId = state.yutGame.control?.roundId;
+  if (state.role !== 'host' || !state.presenting || !state.online || yutAdvancing || slide.game !== 'yut'
+    || !['score', 'award'].includes(slide.view) || !state.teamScores?.awards?.[roundId]
+    || state.slideIndex === STAGES.length - 1) return;
+  const expectedIndex = state.slideIndex, resetAt = state.presentation?.resetAt ?? null;
+  const delay = (state.presentation?.updatedAt ?? Date.now()) + slide.duration - Date.now() - state.serverOffset;
+  yutTimer = setTimeout(async () => {
+    yutAdvancing = true;
+    try {
+      await api.followPresentationSlide(state.room, expectedIndex, expectedIndex + 1, resetAt);
+      yutRetryAt = 0;
+    } catch (error) { yutRetryAt = Date.now() + 2000; showError(error); }
+    finally { yutAdvancing = false; schedule(); }
+  }, Math.max(50, delay, yutRetryAt - Date.now()));
+}
+
 async function save() {
   const submittedRows = JSON.stringify(state.rows);
   let roster;
@@ -1034,6 +1100,11 @@ async function action(name, errorId) {
   state.busy = true; schedule();
   try {
     if (name === 'reaction-signal' && STAGES[state.slideIndex].game === 'reaction' && STAGES[state.slideIndex].view === 'play') await api.signalReactionGame(state.room, state.reactionGame.control?.roundId);
+    if (name.startsWith('yut-win-') && STAGES[state.slideIndex].id === 'yut-board') {
+      const result = await api.finishYutGame(state.room, state.yutGame.control?.roundId, name.slice(-1));
+      state.yutGame = result.game; state.teamScores = result.scores;
+      await api.followPresentationSlide(state.room, state.slideIndex, STAGES.findIndex(slide => slide.id === 'final-ranking'), state.presentation?.resetAt ?? null);
+    }
     if (name === 'reset' && state.role === 'host' && state.presenting) {
       await api.resetPresentation(state.room);
       state.gameError = '';
@@ -1343,6 +1414,7 @@ function attachParticipant(id) {
   state.numberGame = {}; state.numberReady = false; state.numberConfirm = false; state.numberChoice = null;
   state.memoryGame = {}; state.memoryReady = false; state.memoryConfirm = false;
   state.reactionGame = {}; state.reactionReady = false; state.reactionConfirm = false;
+  state.yutGame = {};
   if (!id) { watchActiveGame(); presenceEpoch++; presenceClose?.().catch(() => {}); presenceClose = null; state.participant = null; state.instruction = null; state.response = null; schedule(); return; }
   participantSubscriptions.watch(`participants/${id}`, person => { state.participant = person; void syncPresence(); schedule(); }, showError);
   participantSubscriptions.watch(`instructions/${id}`, instruction => { state.instruction = instruction; schedule(); }, showError);
@@ -1358,6 +1430,10 @@ function watchActiveGame() {
   gameSubscriptions.clear(); gameWatchKey = null;
   if (!state.uid || !state.room || (state.role === 'participant' && !state.participantId)) return;
   gameWatchKey = watchKey;
+  if (key === 'yut') {
+    if (state.role !== 'participant') gameSubscriptions.watch('yutGame', value => { state.yutGame = value ?? {}; schedule(); }, showGameError);
+    return;
+  }
   if (key === 'reaction') {
     if (state.role === 'participant') {
       const game = {};
@@ -1493,6 +1569,7 @@ function syncPresentation(presentation) {
     state.numberGame = {}; state.numberReady = false; state.numberConfirm = false; state.numberChoice = null;
     state.memoryGame = {}; state.memoryReady = false; state.memoryConfirm = false;
     state.reactionGame = {}; state.reactionReady = false; state.reactionConfirm = false;
+    state.yutGame = {};
     state.teamScores = null;
     gameWatchKey = null;
     state.operatorError = null;

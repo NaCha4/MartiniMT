@@ -432,6 +432,35 @@ const reactionGameRules = {
   },
   '$other': denyExtra,
 };
+const yutGameRules = {
+  '.read': controller, '.write': controller,
+  '.validate': `newData.hasChildren(['control','pieces']) && newData.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val() && (newData.child('control/phase').val() === 'finished') === newData.hasChild('result') && (!data.hasChild('result') || newData.child('result/winnerTeam').val() === data.child('result/winnerTeam').val())`,
+  control: {
+    '.validate': "newData.hasChildren(['roundId','phase','updatedAt']) && (!data.exists() || newData.child('roundId').val() === data.child('roundId').val())",
+    roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' }, updatedAt: storedTimestamp,
+    phase: { '.validate': "newData.val() === 'playing' || newData.val() === 'finished'" }, '$other': denyExtra,
+  },
+  pieces: {
+    '.validate': `newData.hasChildren(${JSON.stringify(['A', 'B', 'C', 'D'].flatMap(team => [1, 2, 3, 4].map(number => `${team}${number}`)))})`,
+    '$piece': {
+      '.validate': "$piece.matches(/^[ABCD][1-4]$/) && newData.hasChildren(['x','y','stack'])",
+      x: { '.validate': 'newData.isNumber() && newData.val() >= 24 && newData.val() <= 976' },
+      y: { '.validate': 'newData.isNumber() && newData.val() >= 24 && newData.val() <= 656' },
+      stack: { '.validate': 'newData.isString() && newData.val().matches(/^[ABCD][1-4]$/)' },
+      '$other': denyExtra,
+    },
+  },
+  result: {
+    '.validate': "newData.hasChildren(['winnerTeam','points','revealedAt'])",
+    winnerTeam: { '.validate': "newData.val() === 'A' || newData.val() === 'B' || newData.val() === 'C' || newData.val() === 'D'" },
+    points: {
+      '.validate': "newData.hasChildren(['A','B','C','D'])",
+      '$team': { '.validate': "($team === 'A' || $team === 'B' || $team === 'C' || $team === 'D') && newData.isNumber() && newData.val() === (newData.parent().parent().child('winnerTeam').val() === $team ? 300 : 0)" },
+    },
+    revealedAt: storedTimestamp, '$other': denyExtra,
+  },
+  '$other': denyExtra,
+};
 const session = {
   '.read': owner,
   '.write': "auth != null && !data.exists() && newData.child('meta/ownerUid').val() === auth.uid && $session.matches(/^[A-Za-z0-9_-]{20}$/)",
@@ -553,6 +582,7 @@ const session = {
   numberGame: numberGameRules,
   memoryGame: memoryGameRules,
   reactionGame: reactionGameRules,
+  yutGame: yutGameRules,
   oxQuestions: { '.read': controller, '.write': controller, ...oxQuestions },
   oxGame: oxGameRules,
   zoomQuestions: { '.read': controller, '.write': controller, ...zoomQuestions },
