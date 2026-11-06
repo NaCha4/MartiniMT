@@ -1,7 +1,8 @@
 import { TEAM_NAMES } from './event-model.js';
-import { YUT_WIDTH, YUT_HEIGHT, yutStacks } from './yut-model.js';
+import { YUT_WIDTH, YUT_HEIGHT, yutStacks, yutDisplayPosition, yutBoardPosition } from './yut-model.js';
 
 const boards = new WeakMap();
+const pawn = '<svg class="yut-pawn" viewBox="0 0 80 100" aria-hidden="true"><ellipse class="pawn-shadow" cx="40" cy="91" rx="33" ry="7"/><path class="pawn-base" d="M13 77H67L75 89Q40 101 5 89Z"/><ellipse class="pawn-base-top" cx="40" cy="77" rx="27" ry="7"/><path class="pawn-body" d="M21 76Q18 61 34 48L26 50Q19 52 16 44L11 40L18 32L20 23L30 16L30 7L39 14L49 11Q63 21 65 37Q68 50 56 60L58 76Q40 84 21 76Z"/><path class="pawn-shade" d="M49 11Q68 33 54 51Q43 64 48 79L58 76L56 60Q68 50 65 37Q63 21 49 11Z"/><path class="pawn-highlight" d="M26 73Q23 61 41 46M22 29L29 23L37 21"/><path class="pawn-bridle" d="M19 34L37 43L44 35"/><circle class="pawn-eye" cx="29" cy="30" r="2.5"/><circle class="pawn-eye" cx="18" cy="41" r="1.7"/></svg>';
 
 export function bindYutBoard(root, options) {
   const board = root.querySelector('[data-yut-board]');
@@ -42,7 +43,7 @@ export function bindYutBoard(root, options) {
         if (board.hasPointerCapture(event.pointerId)) board.releasePointerCapture(event.pointerId);
         token.classList.remove('is-dragging');
         record.options.onDrag(false);
-        if (next.type === 'pointerup') void record.options.onMove(id, position);
+        if (next.type === 'pointerup') void record.options.onMove(id, yutBoardPosition(position));
       };
       board.addEventListener('pointermove', move);
       board.addEventListener('pointerup', finish);
@@ -65,18 +66,19 @@ export function bindYutBoard(root, options) {
       token.className = 'yut-piece';
       token.dataset.yutPiece = stack.id;
       token.dataset.team = stack.team;
-      const previous = record.positions[stack.id] ?? stack;
+      const previous = yutDisplayPosition(record.positions[stack.id] ?? stack, stack.id);
       token.style.left = `${previous.x / YUT_WIDTH * 100}%`;
       token.style.top = `${previous.y / YUT_HEIGHT * 100}%`;
       container.append(token);
       token.getBoundingClientRect();
     }
-    token.textContent = `${TEAM_NAMES[stack.team]}${stack.ids.length > 1 ? ` ×${stack.ids.length}` : ` · ${stack.id[1]}`}`;
+    token.innerHTML = `${pawn}<span class="yut-piece-label">${TEAM_NAMES[stack.team]} · ${stack.id[1]}</span>${stack.ids.length > 1 ? `<b class="yut-stack-count">×${stack.ids.length}</b>` : ''}`;
     token.setAttribute('aria-label', `${TEAM_NAMES[stack.team]} ${stack.id[1]}번 말${stack.ids.length > 1 ? ` ${stack.ids.length}개 업음` : ''}`);
     token.classList.toggle('is-stack', stack.ids.length > 1);
     token.disabled = options.disabled || game.control?.phase !== 'playing';
-    token.style.left = `${stack.x / YUT_WIDTH * 100}%`;
-    token.style.top = `${stack.y / YUT_HEIGHT * 100}%`;
+    const position = yutDisplayPosition(stack, stack.id);
+    token.style.left = `${position.x / YUT_WIDTH * 100}%`;
+    token.style.top = `${position.y / YUT_HEIGHT * 100}%`;
   }
   record.positions = game.pieces ?? {};
 }

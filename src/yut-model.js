@@ -3,6 +3,7 @@ import { TEAM_IDS } from './event-model.js';
 export const YUT_WIDTH = 1000;
 export const YUT_HEIGHT = 680;
 export const YUT_WIN_POINTS = 300;
+export const YUT_DISPLAY_BOARD = { left: 45, right: 955, top: 45, bottom: 535 };
 export const YUT_PIECE_IDS = TEAM_IDS.flatMap(team => [1, 2, 3, 4].map(number => `${team}${number}`));
 export const YUT_NODES = [
   ...Array.from({ length: 5 }, (_, index) => [240 + index * 104, 80]),
@@ -22,9 +23,40 @@ export function createYutPieces() {
   return Object.fromEntries(YUT_PIECE_IDS.map(id => [id, yutHome(id)]));
 }
 
+export function isYutBoardPosition(position) {
+  return position?.x >= 240 && position.x <= 760 && position.y >= 80 && position.y <= 600;
+}
+
+function nearestYutNode(position) {
+  const node = [...YUT_NODES].sort((a, b) => Math.hypot(a[0] - position.x, a[1] - position.y) - Math.hypot(b[0] - position.x, b[1] - position.y))[0];
+  return { x: Math.round(node[0]), y: Math.round(node[1]) };
+}
+
+export function normalizeYutPieces(pieces) {
+  if (!pieces) return {};
+  return Object.fromEntries(YUT_PIECE_IDS.map(id => [id, isYutBoardPosition(pieces[id])
+    ? { ...pieces[id], ...nearestYutNode(pieces[id]) }
+    : yutHome(id)]));
+}
+
+export function yutDisplayPosition(position, id) {
+  if (!isYutBoardPosition(position)) return { x: 70 + TEAM_IDS.indexOf(id[0]) * 240 + (Number(id[1]) - 1) * 50, y: 626 };
+  return {
+    x: YUT_DISPLAY_BOARD.left + (position.x - 240) / 520 * (YUT_DISPLAY_BOARD.right - YUT_DISPLAY_BOARD.left),
+    y: YUT_DISPLAY_BOARD.top + (position.y - 80) / 520 * (YUT_DISPLAY_BOARD.bottom - YUT_DISPLAY_BOARD.top),
+  };
+}
+
+export function yutBoardPosition(position) {
+  return {
+    x: Math.round(240 + (position.x - YUT_DISPLAY_BOARD.left) / (YUT_DISPLAY_BOARD.right - YUT_DISPLAY_BOARD.left) * 520),
+    y: Math.round(80 + (position.y - YUT_DISPLAY_BOARD.top) / (YUT_DISPLAY_BOARD.bottom - YUT_DISPLAY_BOARD.top) * 520),
+  };
+}
+
 export function yutStacks(pieces) {
   const stacks = new Map();
-  for (const [id, piece] of Object.entries(pieces ?? {})) {
+  for (const [id, piece] of Object.entries(normalizeYutPieces(pieces))) {
     if (!stacks.has(piece.stack)) stacks.set(piece.stack, { id: piece.stack, team: id[0], x: piece.x, y: piece.y, ids: [] });
     stacks.get(piece.stack).ids.push(id);
   }
@@ -33,19 +65,15 @@ export function yutStacks(pieces) {
 
 export function moveYutPiece(pieces, id, position) {
   if (!pieces?.[id] || !Number.isFinite(position.x) || !Number.isFinite(position.y)) throw new Error('말의 위치를 확인해주세요.');
-  let x = Math.round(Math.max(24, Math.min(YUT_WIDTH - 24, position.x)));
-  let y = Math.round(Math.max(24, Math.min(YUT_HEIGHT - 24, position.y)));
+  pieces = normalizeYutPieces(pieces);
   const moving = yutStacks(pieces).find(stack => stack.ids.includes(id));
-  const stationary = yutStacks(pieces).filter(stack => stack.id !== moving.id);
-  const distance = point => Math.hypot(point.x - x, point.y - y);
-  const nearby = stationary.filter(stack => distance(stack) <= 42).sort((a, b) => distance(a) - distance(b))[0];
-  const node = YUT_NODES.map(([x, y]) => ({ x, y })).filter(point => distance(point) <= 32).sort((a, b) => distance(a) - distance(b))[0];
-  if (nearby || node) ({ x, y } = nearby ?? node);
-  x = Math.round(x); y = Math.round(y);
+  if (!isYutBoardPosition(position)) return { pieces, captured: 0, stackSize: moving.ids.length };
+  const { x, y } = nearestYutNode(position);
+  const stationary = yutStacks(pieces).filter(stack => stack.id !== moving.id && isYutBoardPosition(stack));
   const next = Object.fromEntries(Object.entries(pieces).map(([key, piece]) => [key, { ...piece }]));
   const stacked = [...moving.ids];
   let captured = 0;
-  for (const stack of stationary.filter(point => distance(point) <= 42)) {
+  for (const stack of stationary.filter(point => point.x === x && point.y === y)) {
     if (stack.team === moving.team) stacked.push(...stack.ids);
     else for (const key of stack.ids) { next[key] = yutHome(key); captured++; }
   }
@@ -55,10 +83,11 @@ export function moveYutPiece(pieces, id, position) {
 }
 
 export function splitYutStack(pieces, id) {
+  pieces = normalizeYutPieces(pieces);
   const stack = yutStacks(pieces).find(stack => stack.ids.includes(id));
   if (!stack || stack.ids.length < 2) return pieces;
   const released = [...stack.ids].sort().at(-1);
-  return { ...pieces, [released]: { x: stack.x > YUT_WIDTH - 80 ? stack.x - 56 : stack.x + 56, y: stack.y < 72 ? stack.y + 48 : stack.y - 48, stack: released } };
+  return { ...pieces, [released]: yutHome(released) };
 }
 
 export function yutPoints(team) {

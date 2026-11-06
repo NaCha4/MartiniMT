@@ -1,6 +1,6 @@
 import { TEAM_IDS, TEAM_NAMES, escapeHtml as escape } from './event-model.js';
 import { rankedTeams } from './taste-model.js';
-import { YUT_NODES, YUT_WIN_POINTS } from './yut-model.js';
+import { YUT_NODES, YUT_WIN_POINTS, yutDisplayPosition } from './yut-model.js';
 
 export function yutControls(game, slide, disabled) {
   if (slide.view === 'intro') return '<section class="remote-game-controls"><p>실물 윷으로 진행 · 말은 컴퓨터에서 이동합니다</p></section>';
@@ -10,10 +10,10 @@ export function yutControls(game, slide, disabled) {
 }
 
 export function yutPresentation(game, slide, disabled) {
-  if (slide.view === 'intro') return `<section class="taste-screen yut-intro"><span class="taste-eyebrow">마지막 승부</span><h1>윷놀이</h1><div class="yut-intro-mark" aria-hidden="true">윷</div><div class="liar-rules"><p>윷은 직접 던지고, 말은 마우스로 움직입니다.</p><p>같은 팀 위에 놓아 업기 · 상대 말 위에 놓아 잡기</p><p>업은 말은 오른쪽 클릭으로 하나씩 분리합니다.</p><p>진행자가 고른 승리 팀 <b>+${YUT_WIN_POINTS}점</b></p></div></section>`;
-  return `<section class="yut-screen" data-no-slide><div class="yut-heading"><div><span>마지막 승부</span><h1>윷놀이</h1></div><p>드래그로 이동 · 같은 팀 업기 · 상대 말 잡기 · 오른쪽 클릭으로 분리</p></div><div class="yut-table" data-yut-board data-yut-round="${escape(game.control?.roundId ?? '')}" aria-label="마우스로 말을 옮기는 윷놀이 판">
-    <svg viewBox="0 0 1000 680" aria-hidden="true"><defs><radialGradient id="yut-board-glow"><stop stop-color="#c69b51" stop-opacity=".08"/><stop offset="1" stop-color="#c69b51" stop-opacity="0"/></radialGradient></defs><circle cx="500" cy="340" r="325" fill="url(#yut-board-glow)"/><path class="yut-track" d="M240 80H760V600H240Z M240 80L760 600 M760 80L240 600"/>${YUT_NODES.map(([x, y]) => `<circle class="yut-node ${x === 500 && y === 340 ? 'is-center' : ''}" cx="${x}" cy="${y}" r="${x === 500 && y === 340 ? 21 : 15}"/>`).join('')}${TEAM_IDS.map((team, index) => `<g class="yut-home" data-team="${team}"><rect x="${index < 2 ? 12 : 827}" y="${index % 2 ? 384 : 94}" width="160" height="194" rx="20"/><text x="${index < 2 ? 92 : 907}" y="${index % 2 ? 421 : 131}">${TEAM_NAMES[team]}</text></g>`).join('')}<text class="yut-board-center" x="500" y="407">마티니 MT</text></svg>
-    <div class="yut-pieces" data-yut-pieces></div></div><div class="yut-footer"><p role="status" id="yut-status">${game.result ? `${TEAM_NAMES[game.result.winnerTeam]} 승리 · 최종 순위를 준비합니다` : disabled ? '연결을 기다리고 있습니다' : '팀마다 말 4개 · 이동 방향과 칸 수는 진행자가 결정합니다'}</p><span>우승 +${YUT_WIN_POINTS}점</span></div></section>`;
+  if (slide.view === 'intro') return `<section class="taste-screen yut-intro"><span class="taste-eyebrow">마지막 승부</span><h1>윷놀이</h1><div class="yut-intro-mark" aria-hidden="true">윷</div><div class="liar-rules"><p>윷은 직접 던지고, 말은 마우스로 움직입니다.</p><p>같은 칸의 같은 팀은 업기 · 상대 말은 잡기</p><p>판 밖에 놓으면 제자리로 돌아옵니다.</p><p>오른쪽 클릭하면 업은 말 하나가 대기석으로 돌아갑니다.</p><p>진행자가 고른 승리 팀 <b>+${YUT_WIN_POINTS}점</b></p></div></section>`;
+  return `<section class="yut-screen" data-no-slide><div class="yut-heading"><h1>윷놀이</h1><p>판 위에 놓기 · 같은 칸에서 업기와 잡기 · 오른쪽 클릭으로 한 말 대기석 복귀</p><span>우승 +${YUT_WIN_POINTS}점</span></div><div class="yut-table" data-yut-board data-yut-round="${escape(game.control?.roundId ?? '')}" aria-label="마우스로 말을 옮기는 윷놀이 판">
+    <svg viewBox="0 0 1000 680" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="yut-board-wood" x2="1" y2="1"><stop stop-color="#30291f"/><stop offset=".5" stop-color="#211e19"/><stop offset="1" stop-color="#352b20"/></linearGradient></defs><rect class="yut-surface" x="20" y="20" width="960" height="535" rx="18" fill="url(#yut-board-wood)"/><rect class="yut-inner-frame" x="30" y="30" width="940" height="515" rx="12"/><path class="yut-track" d="M45 45H955V535H45Z M45 45L955 535 M955 45L45 535"/>${YUT_NODES.map(([x, y]) => { const point = yutDisplayPosition({ x, y }); return `<circle class="yut-node ${x === 500 && y === 340 ? 'is-center' : ''}" cx="${point.x}" cy="${point.y}" r="${x === 500 && y === 340 ? 18 : 13}"/>`; }).join('')}${TEAM_IDS.map((team, index) => `<g class="yut-home" data-team="${team}"><rect x="${30 + index * 240}" y="565" width="220" height="103" rx="12"/><text x="${140 + index * 240}" y="588">${TEAM_NAMES[team]} 대기석</text></g>`).join('')}<text class="yut-board-center" x="500" y="350">마티니 MT</text></svg>
+    <div class="yut-pieces" data-yut-pieces></div></div><div class="yut-footer"><p role="status" id="yut-status">${game.result ? `${TEAM_NAMES[game.result.winnerTeam]} 승리 · 최종 순위를 준비합니다` : disabled ? '연결을 기다리고 있습니다' : '판 밖에 놓은 말은 원래 자리로 돌아갑니다'}</p></div></section>`;
 }
 
 export function yutAward(scores, awardIndex, elapsed) {
