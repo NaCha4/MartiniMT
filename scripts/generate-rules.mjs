@@ -327,6 +327,58 @@ const numberGameRules = {
   },
   '$other': denyExtra,
 };
+const memory = `${s}.child('memoryGame')`;
+const memoryEntry = `${memory}.child('contestants').child($team)`;
+const memoryScreen = view => STAGES.findIndex(stage => stage.game === 'memory' && stage.view === view);
+const previousFlip = "data.parent().child((newData.child('sequence').val() - 1) + '')";
+const memoryGameRules = {
+  '.read': controller, '.write': controller,
+  '.validate': `newData.hasChildren(['control','roster']) && newData.child('control/resetAt').val() === ${s}.child('presentation/resetAt').val()`,
+  control: {
+    '.read': gameReader, '.validate': "newData.hasChildren(['roundId','phase','updatedAt'])",
+    roundId: text(20), resetAt: { '.validate': 'newData.isNumber()' }, updatedAt: storedTimestamp,
+    startedAt: storedTimestamp,
+    phase: { '.validate': "newData.val() === 'selecting' || newData.val() === 'running' || newData.val() === 'finished'" },
+    '$other': denyExtra,
+  },
+  roster: { '$participant': { ...tasteGameRules('memoryGame', 0).roster.$participant, '.read': self } },
+  excluded: { '$participant': { '.read': self, '.validate': 'newData.val() === true' } },
+  contestants: {
+    '.read': gameReader,
+    '$team': {
+      '.write': `${member} && !data.exists() && newData.exists() && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${memoryScreen('select')} && ${memory}.child('control/phase').val() === 'selecting' && ${memory}.child('roster').child(${pid}).child('team').val() === $team && newData.child('participantId').val() === ${pid} && !${memory}.child('excluded').child(${pid}).exists() && (${numberNotUsed}) && ${numbers}.child('contestants').child($team).child('participantId').val() !== ${pid}`,
+      '.validate': `($team === 'A' || $team === 'B' || $team === 'C' || $team === 'D') && newData.hasChildren(['participantId','name','team','teamName','roundId','selectedAt']) && newData.child('roundId').val() === ${memory}.child('control/roundId').val() && newData.child('team').val() === $team && newData.child('name').val() === ${memory}.child('roster').child(newData.child('participantId').val()).child('name').val() && newData.child('team').val() === ${memory}.child('roster').child(newData.child('participantId').val()).child('team').val() && newData.child('teamName').val() === ${memory}.child('roster').child(newData.child('participantId').val()).child('teamName').val()`,
+      participantId: text(2), name: text(24), team, teamName: text(20), roundId: text(20), selectedAt: storedTimestamp, '$other': denyExtra,
+    },
+  },
+  events: {
+    '.read': gameReader,
+    '$team': {
+      '$sequence': {
+        '.write': `${member} && !data.exists() && newData.exists() && ${memoryEntry}.child('participantId').val() === ${pid} && ${s}.child('presentation/active').val() === true && ${s}.child('presentation/slideIndex').val() === ${memoryScreen('play')} && ${memory}.child('control/phase').val() === 'running' && now >= ${memory}.child('control/startedAt').val() + 3000`,
+        '.validate': `newData.hasChildren(['roundId','roundIndex','cardIndex','sequence','at']) && newData.child('roundId').val() === ${memory}.child('control/roundId').val() && newData.child('sequence').val() + '' === $sequence && (newData.child('sequence').val() === 0 || (${previousFlip}.exists() && ${previousFlip}.child('at').val() <= newData.child('at').val()))`,
+        roundId: text(20), at: storedTimestamp,
+        sequence: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() < 2000 && newData.val() % 1 === 0' },
+        roundIndex: { '.validate': 'newData.isNumber() && newData.val() >= 0 && newData.val() < 3 && newData.val() % 1 === 0' },
+        cardIndex: { '.validate': "newData.isNumber() && newData.val() >= 0 && newData.val() < 12 + 4 * newData.parent().child('roundIndex').val() && newData.val() % 1 === 0" },
+        '$other': denyExtra,
+      },
+    },
+  },
+  result: {
+    '.read': gameReader, '.validate': "newData.hasChildren(['points','results','revealedAt']) && newData.parent().child('control/phase').val() === 'finished'",
+    points: scoreMap, revealedAt: storedTimestamp,
+    results: { '$team': {
+      '.validate': "newData.hasChildren(['rank','finishedAt','moves'])",
+      rank: { '.validate': 'newData.isNumber() && newData.val() >= 1 && newData.val() <= 4 && newData.val() % 1 === 0' },
+      finishedAt: { '.validate': 'newData.isNumber() && newData.val() <= now' },
+      moves: { '.validate': 'newData.isNumber() && newData.val() >= 24 && newData.val() <= 1000 && newData.val() % 1 === 0' },
+      '$other': denyExtra,
+    } },
+    '$other': denyExtra,
+  },
+  '$other': denyExtra,
+};
 const session = {
   '.read': owner,
   '.write': "auth != null && !data.exists() && newData.child('meta/ownerUid').val() === auth.uid && $session.matches(/^[A-Za-z0-9_-]{20}$/)",
@@ -446,6 +498,7 @@ const session = {
   liarGame: liarGameRules,
   stopwatchGame: stopwatchGameRules,
   numberGame: numberGameRules,
+  memoryGame: memoryGameRules,
   oxQuestions: { '.read': controller, '.write': controller, ...oxQuestions },
   oxGame: oxGameRules,
   zoomQuestions: { '.read': controller, '.write': controller, ...zoomQuestions },

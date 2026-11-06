@@ -10,6 +10,7 @@ import { ZOOM_QUESTION_COUNT, ZOOM_LEVELS, zoomQuestionsReady, zoomPoints, judge
 import { liarRosterReady, liarTally, liarOutcome, liarRevealFinished, liarUsedIds } from './liar-model.js';
 import { stopwatchOutcome, stopwatchRevealFinished, STOPWATCH_MIN_MS, STOPWATCH_MAX_MS } from './stopwatch-model.js';
 import { NUMBER_ROUNDS, NUMBER_VALUES, numberExcludedIds, numberOutcome, numberRevealFinished } from './number-model.js';
+import { memoryExcludedIds, memoryOutcome } from './memory-model.js';
 
 export const emulator = import.meta.env.MODE === 'emulator' || import.meta.env.VITE_USE_EMULATORS === 'true';
 let db, auth;
@@ -78,6 +79,7 @@ export function resetPresentation(room) {
     liarGame: null,
     stopwatchGame: null,
     numberGame: null,
+    memoryGame: null,
   };
   for (const { path } of Object.values(TASTE_ROUNDS)) changes[path] = null;
   return update(locationRef(room), changes);
@@ -520,6 +522,61 @@ export async function awardNumberPoints(room, questionIndex, now = Date.now()) {
     return { ...scoreAward(current, round.roundId, round.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
   });
   return result.snapshot.val();
+}
+
+export async function prepareMemoryGame(room, roster, resetAt = null) {
+  const [liar, stopwatch, numbers] = await Promise.all([read(room, 'liarGame'), read(room, 'stopwatchGame'), read(room, 'numberGame')]);
+  const excluded = Object.fromEntries([...memoryExcludedIds(liar, stopwatch, numbers)].map(id => [id, true]));
+  const roundId = push(locationRef(room, 'memoryGame')).key;
+  const result = await transactLoaded(locationRef(room, 'memoryGame'), current => {
+    if (current) return;
+    if (!Object.keys(roster).some(id => !excluded[id])) throw { userMessage: '이전 게임에 출전하지 않은 참가자가 필요합니다.' };
+    return { control: { roundId, phase: 'selecting', resetAt, updatedAt: serverTimestamp() }, roster, excluded };
+  });
+  const game = result.snapshot.val();
+  if (!game || (game.control.resetAt ?? null) !== resetAt) throw { userMessage: '진행이 초기화되었습니다. 현재 화면을 확인해주세요.' };
+  return game;
+}
+
+export async function claimMemoryEntry(room, participantId, roundId) {
+  const person = await read(room, `memoryGame/roster/${participantId}`);
+  if (!person) throw { userMessage: '등록된 참가자만 출전할 수 있습니다.' };
+  const result = await transactLoaded(locationRef(room, `memoryGame/contestants/${person.team}`), current => current ? undefined
+    : { participantId, ...person, roundId, selectedAt: serverTimestamp() });
+  if (!result.committed) throw { userMessage: '우리 조의 출전자가 이미 정해졌습니다.' };
+}
+
+export async function startMemoryGame(room, roundId) {
+  const result = await transactLoaded(locationRef(room, 'memoryGame'), current => {
+    if (current?.control.roundId !== roundId || current.control.phase !== 'selecting') return;
+    if (!Object.keys(current.contestants ?? {}).length) throw { userMessage: '출전자를 먼저 모집해주세요.' };
+    return { ...current, control: { ...current.control, phase: 'running', startedAt: serverTimestamp(), updatedAt: serverTimestamp() } };
+  });
+  if (!result.committed) throw { userMessage: '이미 시작했거나 진행이 초기화되었습니다.' };
+}
+
+export async function submitMemoryFlip(room, team, roundId, roundIndex, cardIndex, sequence) {
+  const path = `memoryGame/events/${team}/${sequence}`;
+  try {
+    await set(locationRef(room, path), { roundId, roundIndex, cardIndex, sequence, at: serverTimestamp() });
+  } catch (error) {
+    const saved = await read(room, path).catch(() => null);
+    if (saved?.roundId !== roundId || saved.roundIndex !== roundIndex || saved.cardIndex !== cardIndex) throw error;
+  }
+}
+
+export async function awardMemoryPoints(room, now = Date.now()) {
+  const result = await transactLoaded(locationRef(room, 'memoryGame'), current => {
+    if (!current || current.result) return;
+    return { ...current, control: { ...current.control, phase: 'finished', updatedAt: serverTimestamp() }, result: { ...memoryOutcome(current, now), revealedAt: serverTimestamp() } };
+  });
+  const game = result.snapshot.val();
+  if (!game?.result) throw { userMessage: '세 라운드를 모두 마친 뒤 점수를 반영합니다.' };
+  const scores = await transactLoaded(locationRef(room, 'teamScores'), current => {
+    if (current?.awards?.[game.control.roundId]) return;
+    return { ...scoreAward(current, game.control.roundId, game.result.points, serverTimestamp()), resetAt: game.control.resetAt ?? null };
+  });
+  return scores.snapshot.val();
 }
 
 export async function claimParticipant(room, id, uid) {
